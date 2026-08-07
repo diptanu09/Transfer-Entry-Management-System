@@ -41,7 +41,7 @@ function generate_transfer_entry_pdf_content($record, $sectional_number, $accoun
     // Table Box
     $start_y = $pdf->GetY();
     $left = 16;
-    $w = 178; // 178 mm width
+    $w = 178;
     $half_w = 89;
     $box_h = 170;
 
@@ -116,7 +116,6 @@ function generate_transfer_entry_pdf_content($record, $sectional_number, $accoun
     $pdf->MultiCell(80, 5, "{$tr_display} - {$tr_desc}", 0, 'L');
 
     if ($include_signatures) {
-        // Signatures at bottom
         $pdf->SetY($start_y + $box_h + 10);
         $pdf->SetFont('Helvetica', '', 9);
         $pdf->Cell(55, 6, 'Dealing Hand', 0, 0, 'L');
@@ -137,9 +136,6 @@ function generate_transfer_reports($start_date_str, $end_date_str, $accounting_m
     }
     if ($start_db > $end_db) {
         throw new Exception("From date cannot be after To date.");
-    }
-    if ($starting_sec_num !== null && (int)$starting_sec_num <= 0) {
-        throw new Exception("Starting sectional number must be a positive integer.");
     }
 
     $pdo = initialize_database();
@@ -175,7 +171,6 @@ function generate_transfer_reports($start_date_str, $end_date_str, $accounting_m
         ];
     }
 
-    // Strict TR code validation before starting generation
     $missing_tr_map = [];
     $valid_records = [];
 
@@ -185,17 +180,9 @@ function generate_transfer_reports($start_date_str, $end_date_str, $accounting_m
             $state_name = $r['state_government'] ?? '';
             $p_date = !empty($r['posting_date']) ? format_date($r['posting_date']) : '';
 
-            if ($raw_code !== '') {
-                $label = display_tr_code($raw_code);
-            } else {
-                $info_parts = [];
-                if ($state_name) $info_parts[] = "State: {$state_name}";
-                if ($p_date) $info_parts[] = "Date: {$p_date}";
-                $info_str = implode(', ', $info_parts);
-                $label = $info_str ? "Blank/Unmapped TR Code ({$info_str})" : "Blank/Unmapped TR Code";
-            }
-
+            $label = $raw_code !== '' ? display_tr_code($raw_code) : "Blank/Unmapped TR Code";
             $amt = (float)($r['amount'] ?? 0.0);
+
             if (!isset($missing_tr_map[$label])) {
                 $missing_tr_map[$label] = ['amount' => 0.0, 'count' => 0];
             }
@@ -213,8 +200,7 @@ function generate_transfer_reports($start_date_str, $end_date_str, $accounting_m
             $amt = $info['amount'];
             $cnt = $info['count'];
             $total_missing_amt += $amt;
-            $rec_str = ($cnt === 1) ? "({$cnt} record)" : "({$cnt} records)";
-            $lines[] = "- {$label} - Rs. " . indian_number($amt) . "/- {$rec_str}";
+            $lines[] = "- {$label} - Rs. " . indian_number($amt) . "/- ({$cnt} records)";
         }
         $tr_details_str = implode("\n", $lines);
         $total_missing_fmt = indian_number($total_missing_amt);
@@ -231,12 +217,6 @@ function generate_transfer_reports($start_date_str, $end_date_str, $accounting_m
     $pdo->beginTransaction();
     try {
         foreach ($valid_records as $r) {
-            $check_stmt = $pdo->prepare("SELECT id FROM generated_transfer_reports WHERE sectional_number = ?");
-            $check_stmt->execute([$next_sec_num]);
-            if ($check_stmt->fetch()) {
-                throw new Exception("Sectional number {$next_sec_num} has already been used.");
-            }
-
             $pdf_bytes = generate_transfer_entry_pdf_content($r, $next_sec_num, $accounting_month, $gen_date);
             $p_date_str = str_replace('/', '-', format_date($r['posting_date']));
             $filename = "TE_{$next_sec_num}_{$r['sg_account_name']}_{$p_date_str}.pdf";
@@ -263,8 +243,8 @@ function generate_transfer_reports($start_date_str, $end_date_str, $accounting_m
         $pdo->commit();
         return [
             'generated' => $generated_count,
-            'skipped' => $skipped_count,
-            'warnings' => $warnings,
+            'skipped' => 0,
+            'warnings' => [],
             'missing_tr_codes' => []
         ];
     } catch (Exception $e) {

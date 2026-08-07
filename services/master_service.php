@@ -1,6 +1,6 @@
 <?php
 /**
- * Scheme Configuration Master Service for PHP Application.
+ * Scheme Configuration Master Service for Transfer Entry Management System.
  */
 
 require_once __DIR__ . '/../db.php';
@@ -12,6 +12,37 @@ function verify_password($password) {
     return ($password === MASTER_PASSWORD);
 }
 
+/**
+ * Helper function to retrieve all valid TR codes mapped from the master table.
+ */
+function get_scheme_master_map() {
+    $pdo = initialize_database();
+    $stmt = $pdo->query("
+        WITH ranked_master AS (
+            SELECT tr_code, sub_head, detail_head, controller, css, tr_desc, central_share, state_share,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY tr_code
+                       ORDER BY
+                            CASE WHEN controller IS NOT NULL OR css IS NOT NULL THEN 0 ELSE 1 END,
+                            source_row_number
+                   ) AS row_rank
+            FROM scheme_configuration_master
+        )
+        SELECT tr_code, sub_head, detail_head, controller, css, tr_desc, central_share, state_share
+        FROM ranked_master
+        WHERE row_rank = 1
+    ");
+    
+    $rows = $stmt->fetchAll();
+    $map = [];
+    foreach ($rows as $m) {
+        if (!empty($m['tr_code']) && $m['sub_head'] !== null && $m['detail_head'] !== null) {
+            $map[strtoupper(trim($m['tr_code']))] = $m;
+        }
+    }
+    return $map;
+}
+
 function get_master_records($search_query = null) {
     $pdo = initialize_database();
     $where = [];
@@ -19,8 +50,8 @@ function get_master_records($search_query = null) {
 
     if ($search_query && trim($search_query) !== '') {
         $q = '%' . trim($search_query) . '%';
-        $where[] = "(tr_code LIKE ? OR tr_desc LIKE ? OR controller LIKE ? OR css LIKE ? OR CAST(sub_head AS TEXT) LIKE ? OR CAST(detail_head AS TEXT) LIKE ?)";
-        $params = [$q, $q, $q, $q, $q, $q];
+        $where[] = "(LOWER(tr_code) LIKE LOWER(?) OR LOWER(tr_desc) LIKE LOWER(?) OR LOWER(controller) LIKE LOWER(?) OR LOWER(css) LIKE LOWER(?))";
+        $params = [$q, $q, $q, $q];
     }
 
     $where_sql = !empty($where) ? "WHERE " . implode(" AND ", $where) : "";
@@ -39,7 +70,7 @@ function add_master_record($data, $password) {
         throw new Exception("Incorrect password! Master record changes require password '12345'.");
     }
 
-    $tr_code = trim($data['tr_code'] ?? '');
+    $tr_code = strtoupper(trim($data['tr_code'] ?? ''));
     if (empty($tr_code)) {
         throw new Exception("TR Code is required.");
     }
@@ -68,6 +99,7 @@ function add_master_record($data, $password) {
         ($data['detail_head'] !== '' && $data['detail_head'] !== null) ? (int)$data['detail_head'] : null,
     ]);
 
+    $pdo->commit();
     return $pdo->lastInsertId();
 }
 
@@ -76,7 +108,7 @@ function update_master_record($id, $data, $password) {
         throw new Exception("Incorrect password! Master record changes require password '12345'.");
     }
 
-    $tr_code = trim($data['tr_code'] ?? '');
+    $tr_code = strtoupper(trim($data['tr_code'] ?? ''));
     if (empty($tr_code)) {
         throw new Exception("TR Code is required.");
     }
@@ -106,6 +138,7 @@ function update_master_record($id, $data, $password) {
         ($data['detail_head'] !== '' && $data['detail_head'] !== null) ? (int)$data['detail_head'] : null,
         (int)$id
     ]);
+    $pdo->commit();
 }
 
 function delete_master_record($id, $password) {
@@ -116,4 +149,5 @@ function delete_master_record($id, $password) {
     $pdo = initialize_database();
     $stmt = $pdo->prepare("DELETE FROM scheme_configuration_master WHERE id = ?");
     $stmt->execute([(int)$id]);
+    $pdo->commit();
 }

@@ -374,6 +374,7 @@ function initUploadPage() {
 
   loadRecentUploads();
 
+  // In assets/js/app.js inside initUploadPage()
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const fileInput = document.getElementById('upload-file');
@@ -381,7 +382,7 @@ function initUploadPage() {
     const statusLabel = document.getElementById('upload-status');
 
     if (!fileInput || !fileInput.files.length) {
-      alert("Choose a payment file first.");
+      alert("Please select a payment file first.");
       return;
     }
 
@@ -389,15 +390,24 @@ function initUploadPage() {
     formData.append('file', fileInput.files[0]);
     formData.append('report_date', dateInput ? dateInput.value : '');
 
-    if (statusLabel) statusLabel.innerText = "Uploading to database... Please wait.";
+    if (statusLabel) statusLabel.innerText = "Uploading & processing records... Please wait.";
 
     try {
       const res = await fetch('api.php?action=upload_file', { method: 'POST', body: formData });
-      const data = await res.json();
+
+      // Safely get raw text response first to avoid "Unexpected end of JSON input"
+      const textResponse = await res.text();
+      let data;
+      try {
+        data = JSON.parse(textResponse);
+      } catch (jsonErr) {
+        console.error("Server raw response:", textResponse);
+        throw new Error(`Server returned an invalid response. Raw output:\n\n${textResponse.substring(0, 300)}`);
+      }
 
       if (!data.success) {
         if (statusLabel) statusLabel.innerText = "Upload failed.";
-        showAlertModal("Upload Failed", data.error, true);
+        showAlertModal("Upload Failed", data.error || "An error occurred during file upload.", true);
         return;
       }
 

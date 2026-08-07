@@ -1,8 +1,28 @@
 <?php
 /**
  * RESTful JSON API Router for Transfer Entry Management System.
- * Supports RBAC (ADMIN, OPERATOR, VIEWER) & Admin Approval Workflow.
+ * Supports Oracle 11g DB, BCRYPT Authentication, RBAC (ADMIN, OPERATOR, VIEWER),
+ * and Admin User Approval Workflow.
  */
+
+// Enable output buffering to clean any accidental PHP notices/warnings from JSON responses
+ob_start();
+
+// Ensure shutdown handler catches fatal errors:
+register_shutdown_function(function() {
+    $error = error_get_last();
+    if ($error !== NULL && in_array($error['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR])) {
+        if (ob_get_length()) ob_clean();
+        http_response_code(500);
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'error' => "Fatal Error: " . $error['message'] . " in " . $error['file'] . " on line " . $error['line']]);
+        exit;
+    }
+});
+
+// Suppress inline error displaying and enable exception catching
+ini_set('display_errors', 0);
+error_reporting(E_ALL);
 
 header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: GET, POST, OPTIONS");
@@ -20,17 +40,27 @@ session_start();
 
 $action = $_REQUEST['action'] ?? '';
 
+/**
+ * Send JSON response cleanly by discarding output buffers first.
+ */
 function send_json($data, $status = 200) {
+    if (ob_get_length()) ob_clean();
     http_response_code($status);
-    header('Content-Type: application/json');
+    header('Content-Type: application/json; charset=utf-8');
     echo json_encode($data);
     exit;
 }
 
+/**
+ * Send error message response in JSON format.
+ */
 function send_error($message, $status = 400) {
     send_json(['success' => false, 'error' => $message], $status);
 }
 
+/**
+ * Enforce role-based permission checks for sensitive endpoints.
+ */
 function require_role($allowed_roles) {
     $current_role = $_SESSION['role'] ?? 'VIEWER';
     if (!in_array($current_role, $allowed_roles)) {
@@ -38,8 +68,16 @@ function require_role($allowed_roles) {
     }
 }
 
+// Intercept fatal PHP/Oracle runtime errors cleanly
+register_shutdown_function(function() {
+    $error = error_get_last();
+    if ($error !== NULL && in_array($error['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR])) {
+        send_error("Fatal PHP Error: " . $error['message'] . " in " . $error['file'] . " line " . $error['line'], 500);
+    }
+});
+
 // -------------------------------------------------------------------
-// 1. REGISTER ACTION (Requires Admin Approval before login)
+// 1. REGISTER ACTION (Submits registration for Admin approval)
 // -------------------------------------------------------------------
 if ($action === 'register') {
     $username  = strtolower(trim($_POST['username'] ?? ''));
@@ -69,6 +107,7 @@ if ($action === 'register') {
         send_error("Username '{$username}' is already registered.", 409);
     }
 
+    // Encrypt password using BCRYPT
     $hash = password_hash($password, PASSWORD_BCRYPT);
 
     $ins_stmt = $pdo->prepare("
@@ -85,7 +124,7 @@ if ($action === 'register') {
 }
 
 // -------------------------------------------------------------------
-// 2. LOGIN ACTION (Verifies Approval Status & Role)
+// 2. LOGIN ACTION (Verifies BCRYPT Password & Approval Status)
 // -------------------------------------------------------------------
 if ($action === 'login') {
     $user = strtolower(trim($_POST['user_id'] ?? $_POST['username'] ?? ''));
@@ -112,7 +151,10 @@ if ($action === 'login') {
         send_error("Account Pending Approval: Your account has not been approved by an Administrator yet.", 403);
     }
 
-    if (password_verify($pwd, $row['password_hash'])) {
+    $stored_hash = $row['password_hash'] ?? '';
+
+    // Verify password hash
+    if (password_verify($pwd, $stored_hash)) {
         $_SESSION['user']      = $row['username'];
         $_SESSION['full_name'] = $row['full_name'] ?: $row['username'];
         $_SESSION['role']      = strtoupper($row['role'] ?? 'VIEWER');
@@ -129,7 +171,7 @@ if ($action === 'login') {
 }
 
 // -------------------------------------------------------------------
-// 3. LOGOUT & CHECK AUTH
+// 3. LOGOUT ACTION
 // -------------------------------------------------------------------
 if ($action === 'logout') {
     session_unset();
@@ -137,6 +179,9 @@ if ($action === 'logout') {
     send_json(['success' => true]);
 }
 
+// -------------------------------------------------------------------
+// 4. CHECK AUTH ACTION
+// -------------------------------------------------------------------
 if ($action === 'check_auth') {
     send_json([
         'authenticated' => !empty($_SESSION['user']),
@@ -146,7 +191,7 @@ if ($action === 'check_auth') {
     ]);
 }
 
-// Protect remaining actions
+// Protect all remaining endpoints from unauthenticated access
 if (empty($_SESSION['user'])) {
     send_error("Authentication required. Please log in.", 401);
 }
@@ -154,7 +199,7 @@ if (empty($_SESSION['user'])) {
 try {
     switch ($action) {
         // =========================================================
-        // USER MANAGEMENT ENDPOINTS (ADMIN ONLY)
+        // USER APPROVALS & ROLE MANAGEMENT ENDPOINTS (ADMIN ONLY)
         // =========================================================
         case 'get_users_list':
             require_role(['ADMIN']);
@@ -206,16 +251,41 @@ try {
             break;
 
         // =========================================================
-        // OPERATOR & ADMIN ACTIONS (File Upload, Generate PDF, Master Changes)
+        // OPERATOR & ADMIN ENDPOINTS (Upload, Generate, Master Changes)
         // =========================================================
         case 'upload_file':
             require_role(['ADMIN', 'OPERATOR']);
-            if (empty($_FILES['file'])) send_error("No file uploaded.");
-            $report_date = $_POST['report_date'] ?? date('d/m/Y');
+
+            // Verify request body size against php.ini limits
+            if (empty($_FILES) && isset($_SERVER['CONTENT_LENGTH']) && $_SERVER['CONTENT_LENGTH'] > 0) {
+                send_error("Uploaded file size exceeds PHP's 'post_max_size' limit in php.ini. Please increase post_max_size to match upload_max_filesize.", 413);
+            }
+
+            if (empty($_FILES['file'])) {
+                send_error("No file received by the server.");
+            }
+
             $file = $_FILES['file'];
+
+            if ($file['error'] !== UPLOAD_ERR_OK) {
+                $err_map = [
+                    UPLOAD_ERR_INI_SIZE   => "The uploaded file exceeds upload_max_filesize in php.ini.",
+                    UPLOAD_ERR_FORM_SIZE  => "The uploaded file exceeds MAX_FILE_SIZE in the HTML form.",
+                    UPLOAD_ERR_PARTIAL    => "The uploaded file was only partially uploaded.",
+                    UPLOAD_ERR_NO_FILE    => "No file was uploaded.",
+                    UPLOAD_ERR_NO_TMP_DIR => "Missing temporary folder on server.",
+                    UPLOAD_ERR_CANT_WRITE => "Failed to write file to disk.",
+                    UPLOAD_ERR_EXTENSION  => "A PHP extension stopped the file upload."
+                ];
+                $msg = $err_map[$file['error']] ?? "Unknown file upload error code: " . $file['error'];
+                send_error($msg, 400);
+            }
+
+            $report_date = $_POST['report_date'] ?? date('d/m/Y');
             $count = import_daily_payment_file($file['tmp_name'], $file['name'], $report_date);
             $records = get_uploaded_file_records($file['name'], to_db_date($report_date));
             $total_amount = array_reduce($records, function($sum, $item) { return $sum + ($item['amount'] ?? 0); }, 0);
+
             send_json([
                 'success' => true,
                 'count' => $count,
@@ -243,26 +313,30 @@ try {
             break;
 
         case 'add_master_record':
+            require_role(['ADMIN', 'OPERATOR']);
+            $pwd = $_POST['password'] ?? '';
+            $id = add_master_record($_POST, $pwd);
+            send_json(['success' => true, 'id' => $id]);
+            break;
+
         case 'update_master_record':
+            require_role(['ADMIN', 'OPERATOR']);
+            $pwd = $_POST['password'] ?? '';
+            $id = $_POST['id'] ?? 0;
+            update_master_record($id, $_POST, $pwd);
+            send_json(['success' => true]);
+            break;
+
         case 'delete_master_record':
             require_role(['ADMIN', 'OPERATOR']);
             $pwd = $_POST['password'] ?? '';
-            if ($action === 'add_master_record') {
-                $id = add_master_record($_POST, $pwd);
-                send_json(['success' => true, 'id' => $id]);
-            } elseif ($action === 'update_master_record') {
-                $id = $_POST['id'] ?? 0;
-                update_master_record($id, $_POST, $pwd);
-                send_json(['success' => true]);
-            } else {
-                $id = $_POST['id'] ?? 0;
-                delete_master_record($id, $pwd);
-                send_json(['success' => true]);
-            }
+            $id = $_POST['id'] ?? 0;
+            delete_master_record($id, $pwd);
+            send_json(['success' => true]);
             break;
 
         // =========================================================
-        // READ-ONLY ACTIONS (Allowed for VIEWER, OPERATOR, ADMIN)
+        // READ-ONLY ENDPOINTS (Allowed for VIEWER, OPERATOR, ADMIN)
         // =========================================================
         case 'get_recent_uploads':
             send_json(['success' => true, 'uploads' => get_recent_uploads()]);
@@ -348,5 +422,5 @@ try {
             send_error("Invalid or missing action parameter.");
     }
 } catch (Throwable $e) {
-    send_error($e->getMessage());
+    send_error($e->getMessage(), 500);
 }

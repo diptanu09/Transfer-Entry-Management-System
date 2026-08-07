@@ -1,10 +1,11 @@
 <?php
 /**
- * Daily Payment file upload & import service for PHP application.
+ * Daily Payment file upload & import service for PHP Application.
  */
 
 require_once __DIR__ . '/../db.php';
 require_once __DIR__ . '/../helpers.php';
+require_once __DIR__ . '/master_service.php';
 
 function import_daily_payment_file($file_path, $file_name, $report_date_input) {
     $pdo = initialize_database();
@@ -26,7 +27,6 @@ function import_daily_payment_file($file_path, $file_name, $report_date_input) {
         }
         fclose($handle);
     } else {
-        // Simple XML/HTML spreadsheet or basic text parse fallback for excel exports
         $content = file_get_contents($file_path);
         if (strpos($content, '<tr') !== false) {
             preg_match_all('/<tr[^>]*>(.*?)<\/tr>/is', $content, $tr_matches);
@@ -37,7 +37,6 @@ function import_daily_payment_file($file_path, $file_name, $report_date_input) {
                 }
             }
         } else {
-            // Fallback line-by-line tab/comma split
             $lines = explode("\n", $content);
             foreach ($lines as $line) {
                 $line = trim($line);
@@ -51,6 +50,13 @@ function import_daily_payment_file($file_path, $file_name, $report_date_input) {
     if (empty($rows)) {
         throw new Exception("The uploaded file contains no data.");
     }
+
+        // In services/upload_service.php inside import_daily_payment_file()
+    if (!isset($_FILES['file']) || $_FILES['file']['error'] !== UPLOAD_ERR_OK) {
+        $errCode = $_FILES['file']['error'] ?? -1;
+        throw new Exception("File upload failed with error code: {$errCode}. Check server file permissions and php.ini limits.");
+    }
+
 
     // Identify header row
     $header_idx = -1;
@@ -72,29 +78,8 @@ function import_daily_payment_file($file_path, $file_name, $report_date_input) {
         }
     }
 
-    // Fetch master table TR code mapping
-    $master_stmt = $pdo->query("
-        WITH ranked_master AS (
-            SELECT tr_code, sub_head, detail_head,
-                   ROW_NUMBER() OVER (
-                       PARTITION BY tr_code
-                       ORDER BY
-                            CASE WHEN controller IS NOT NULL OR css IS NOT NULL THEN 0 ELSE 1 END,
-                            source_row_number
-                   ) AS row_rank
-            FROM scheme_configuration_master
-        )
-        SELECT tr_code, sub_head, detail_head
-        FROM ranked_master
-        WHERE row_rank = 1
-    ");
-    $master_rows = $master_stmt->fetchAll();
-    $valid_master_map = [];
-    foreach ($master_rows as $m) {
-        if (!empty($m['tr_code']) && $m['sub_head'] !== null && $m['detail_head'] !== null) {
-            $valid_master_map[strtoupper(trim($m['tr_code']))] = true;
-        }
-    }
+    // Call get_scheme_master_map() from master_service.php
+    $valid_master_map = get_scheme_master_map();
 
     $parsed_records = [];
     $missing_tr_map = [];
@@ -212,8 +197,7 @@ function get_recent_uploads() {
         SELECT source_file_name, report_date, COUNT(*) as record_count, SUM(amount) as total_amount, MAX(created_at) as uploaded_at
         FROM daily_payment_records
         GROUP BY source_file_name, report_date
-        ORDER BY uploaded_at DESC
-        LIMIT 50
+        ORDER BY MAX(created_at) DESC
     ");
     return $stmt->fetchAll();
 }
