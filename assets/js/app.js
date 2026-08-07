@@ -1,5 +1,5 @@
 /**
- * Main Web Application Logic for PHP Version
+ * Main Web Application Logic for Transfer Entry Management System
  */
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -14,12 +14,52 @@ document.addEventListener('DOMContentLoaded', () => {
   initMasterPage();
 });
 
+// Switch Auth Tab (Login <-> Register)
+function switchAuthTab(tab) {
+  const loginForm = document.getElementById('login-form');
+  const registerForm = document.getElementById('register-form');
+  const tabLogin = document.getElementById('auth-tab-login');
+  const tabRegister = document.getElementById('auth-tab-register');
+
+  if (!loginForm || !registerForm) return;
+
+  if (tab === 'register') {
+    loginForm.style.display = 'none';
+    registerForm.style.display = 'block';
+    if (tabLogin) {
+      tabLogin.style.color = '#64748b';
+      tabLogin.style.borderBottomColor = 'transparent';
+    }
+    if (tabRegister) {
+      tabRegister.style.color = 'var(--primary)';
+      tabRegister.style.borderBottomColor = 'var(--primary)';
+    }
+  } else {
+    loginForm.style.display = 'block';
+    registerForm.style.display = 'none';
+    if (tabRegister) {
+      tabRegister.style.color = '#64748b';
+      tabRegister.style.borderBottomColor = 'transparent';
+    }
+    if (tabLogin) {
+      tabLogin.style.color = 'var(--primary)';
+      tabLogin.style.borderBottomColor = 'var(--primary)';
+    }
+  }
+}
+
 // Authentication System
 async function initAuth() {
   const loginForm = document.getElementById('login-form');
   if (loginForm) {
     loginForm.addEventListener('submit', handleLogin);
   }
+
+  const registerForm = document.getElementById('register-form');
+  if (registerForm) {
+    registerForm.addEventListener('submit', handleRegister);
+  }
+
   await checkAuthStatus();
 }
 
@@ -33,25 +73,30 @@ async function checkAuthStatus() {
     const data = await res.json();
 
     if (data.authenticated) {
-      modal.classList.remove('active');
+      if (modal) modal.classList.remove('active');
       if (userArea) userArea.style.display = 'flex';
-      if (userName) userName.innerText = `User: ${data.user}`;
+      if (userName) userName.innerText = `User: ${data.full_name || data.user}`;
     } else {
-      modal.classList.add('active');
+      if (modal) modal.classList.add('active');
       if (userArea) userArea.style.display = 'none';
     }
   } catch (err) {
-    modal.classList.add('active');
+    if (modal) modal.classList.add('active');
   }
 }
 
 async function handleLogin(e) {
   e.preventDefault();
-  const userId = document.getElementById('login-user-id').value.trim();
-  const pwd = document.getElementById('login-password').value.trim();
+  const userIdInput = document.getElementById('login-user-id');
+  const pwdInput = document.getElementById('login-password');
   const errBox = document.getElementById('login-error-msg');
 
-  errBox.style.display = 'none';
+  if (!userIdInput || !pwdInput) return;
+
+  const userId = userIdInput.value.trim();
+  const pwd = pwdInput.value.trim();
+
+  if (errBox) errBox.style.display = 'none';
 
   const formData = new FormData();
   formData.append('user_id', userId);
@@ -62,27 +107,86 @@ async function handleLogin(e) {
     const data = await res.json();
 
     if (!data.success) {
-      errBox.innerText = data.error || "Invalid Login ID or Password!";
-      errBox.style.display = 'block';
+      if (errBox) {
+        errBox.innerText = data.error || "Invalid Login ID or Password!";
+        errBox.style.display = 'block';
+      }
       return;
     }
 
-    document.getElementById('login-modal').classList.remove('active');
-    document.getElementById('user-info-area').style.display = 'flex';
-    document.getElementById('logged-user-name').innerText = `User: ${data.user}`;
-    
-    // Load initial data
+    const modal = document.getElementById('login-modal');
+    if (modal) modal.classList.remove('active');
+
+    const userArea = document.getElementById('user-info-area');
+    if (userArea) userArea.style.display = 'flex';
+
+    const userName = document.getElementById('logged-user-name');
+    if (userName) userName.innerText = `User: ${data.full_name || data.user}`;
+
     loadRecentUploads();
   } catch (err) {
-    errBox.innerText = err.message;
-    errBox.style.display = 'block';
+    if (errBox) {
+      errBox.innerText = err.message || "Server communication error.";
+      errBox.style.display = 'block';
+    }
+  }
+}
+
+async function handleRegister(e) {
+  e.preventDefault();
+  const usernameInput = document.getElementById('reg-username');
+  const fullNameInput = document.getElementById('reg-full-name');
+  const emailInput = document.getElementById('reg-email');
+  const pwdInput = document.getElementById('reg-password');
+  const errBox = document.getElementById('register-error-msg');
+
+  if (errBox) errBox.style.display = 'none';
+
+  const username = usernameInput ? usernameInput.value.trim() : '';
+  const fullName = fullNameInput ? fullNameInput.value.trim() : '';
+  const email = emailInput ? emailInput.value.trim() : '';
+  const password = pwdInput ? pwdInput.value : '';
+
+  const formData = new FormData();
+  formData.append('username', username);
+  formData.append('full_name', fullName);
+  formData.append('email', email);
+  formData.append('password', password);
+
+  try {
+    const res = await fetch('api.php?action=register', { method: 'POST', body: formData });
+    const data = await res.json();
+
+    if (!data.success) {
+      if (errBox) {
+        errBox.innerText = data.error || "Registration failed.";
+        errBox.style.display = 'block';
+      }
+      return;
+    }
+
+    const modal = document.getElementById('login-modal');
+    if (modal) modal.classList.remove('active');
+
+    const userArea = document.getElementById('user-info-area');
+    if (userArea) userArea.style.display = 'flex';
+
+    const userName = document.getElementById('logged-user-name');
+    if (userName) userName.innerText = `User: ${data.full_name || data.user}`;
+
+    loadRecentUploads();
+  } catch (err) {
+    if (errBox) {
+      errBox.innerText = err.message || "Server communication error.";
+      errBox.style.display = 'block';
+    }
   }
 }
 
 async function handleLogout() {
   try {
     await fetch('api.php?action=logout');
-    checkAuthStatus();
+    await checkAuthStatus();
   } catch (e) {
     location.reload();
   }
@@ -100,9 +204,9 @@ function initTabs() {
 
       btn.classList.add('active');
       const targetId = btn.dataset.tab;
-      document.getElementById(targetId).classList.add('active');
+      const targetContent = document.getElementById(targetId);
+      if (targetContent) targetContent.classList.add('active');
 
-      // Refresh page data on tab activate
       if (targetId === 'tab-upload') loadRecentUploads();
       if (targetId === 'tab-view-data') loadViewData();
       if (targetId === 'tab-generate') loadNextSectionalNumber();
@@ -112,31 +216,42 @@ function initTabs() {
   });
 }
 
-// Utility: Modal Alert
+// Utility Helpers
 function showAlertModal(title, message, isError = false) {
   const modal = document.getElementById('alert-modal');
-  document.getElementById('alert-modal-title').innerText = title;
-  const body = document.getElementById('alert-modal-body');
-  
-  if (isError) {
-    body.innerHTML = `<div class="alert-error-box">${escapeHtml(message)}</div>`;
-  } else {
-    body.innerText = message;
+  const titleEl = document.getElementById('alert-modal-title');
+  const bodyEl = document.getElementById('alert-modal-body');
+
+  if (titleEl) titleEl.innerText = title;
+
+  if (bodyEl) {
+    if (isError) {
+      bodyEl.innerHTML = `<div class="alert-error-box">${escapeHtml(message)}</div>`;
+    } else {
+      bodyEl.innerText = message;
+    }
   }
-  
-  modal.classList.add('active');
+
+  if (modal) modal.classList.add('active');
 }
 
 function closeAlertModal() {
-  document.getElementById('alert-modal').classList.remove('active');
+  const modal = document.getElementById('alert-modal');
+  if (modal) modal.classList.remove('active');
 }
 
 function escapeHtml(text) {
-  return String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return String(text ?? '')
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }
 
 function formatMoney(num) {
-  return new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(num || 0);
+  return new Intl.NumberFormat('en-IN', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }).format(num || 0);
 }
 
 // 1. Upload Page Logic
@@ -152,31 +267,33 @@ function initUploadPage() {
     const dateInput = document.getElementById('upload-date');
     const statusLabel = document.getElementById('upload-status');
 
-    if (!fileInput.files.length) {
+    if (!fileInput || !fileInput.files.length) {
       alert("Choose a payment file first.");
       return;
     }
 
     const formData = new FormData();
     formData.append('file', fileInput.files[0]);
-    formData.append('report_date', dateInput.value);
+    formData.append('report_date', dateInput ? dateInput.value : '');
 
-    statusLabel.innerText = "Uploading to database... Please wait.";
+    if (statusLabel) statusLabel.innerText = "Uploading to database... Please wait.";
 
     try {
       const res = await fetch('api.php?action=upload_file', { method: 'POST', body: formData });
       const data = await res.json();
 
       if (!data.success) {
-        statusLabel.innerText = "Upload failed.";
+        if (statusLabel) statusLabel.innerText = "Upload failed.";
         showAlertModal("Upload Failed", data.error, true);
         return;
       }
 
-      statusLabel.innerText = `Uploaded ${data.count} records successfully. Total amount: Rs. ${formatMoney(data.total_amount)}`;
+      if (statusLabel) {
+        statusLabel.innerText = `Uploaded ${data.count} records successfully. Total amount: Rs. ${formatMoney(data.total_amount)}`;
+      }
       loadRecentUploads();
     } catch (err) {
-      statusLabel.innerText = "Upload failed.";
+      if (statusLabel) statusLabel.innerText = "Upload failed.";
       showAlertModal("Error", err.message, true);
     }
   });
@@ -191,13 +308,13 @@ async function loadRecentUploads() {
     const data = await res.json();
 
     if (data.success) {
-      tableBody.innerHTML = data.uploads.map(u => `
+      tableBody.innerHTML = (data.uploads || []).map(u => `
         <tr>
-          <td>${u.report_date}</td>
+          <td>${escapeHtml(u.report_date)}</td>
           <td><strong>${escapeHtml(u.source_file_name)}</strong></td>
           <td align="right">${u.record_count}</td>
           <td align="right">Rs. ${formatMoney(u.total_amount)}</td>
-          <td>${u.uploaded_at}</td>
+          <td>${escapeHtml(u.uploaded_at)}</td>
         </tr>
       `).join('') || `<tr><td colspan="5" align="center">No uploads yet.</td></tr>`;
     }
@@ -213,10 +330,15 @@ function initViewDataPage() {
 }
 
 async function loadViewData() {
-  const startDate = document.getElementById('view-start-date').value;
-  const endDate = document.getElementById('view-end-date').value;
+  const startDateInput = document.getElementById('view-start-date');
+  const endDateInput = document.getElementById('view-end-date');
   const body = document.getElementById('view-data-body');
   const summary = document.getElementById('view-data-summary');
+
+  if (!body) return;
+
+  const startDate = startDateInput ? startDateInput.value : '';
+  const endDate = endDateInput ? endDateInput.value : '';
 
   body.innerHTML = `<tr><td colspan="6" align="center">Loading records...</td></tr>`;
 
@@ -229,15 +351,17 @@ async function loadViewData() {
       return;
     }
 
-    const records = data.records;
+    const records = data.records || [];
     let totalAmt = 0;
     records.forEach(r => totalAmt += parseFloat(r.amount || 0));
 
-    summary.innerText = `${records.length} record(s) loaded | Total amount: Rs. ${formatMoney(totalAmt)}`;
+    if (summary) {
+      summary.innerText = `${records.length} record(s) loaded | Total amount: Rs. ${formatMoney(totalAmt)}`;
+    }
 
     body.innerHTML = records.map(r => `
       <tr>
-        <td>${r.posting_date} ${r.posting_time}</td>
+        <td>${escapeHtml(r.posting_date)} ${escapeHtml(r.posting_time)}</td>
         <td>${escapeHtml(r.state_government)}</td>
         <td><strong>${escapeHtml(r.sg_account_name)}</strong></td>
         <td align="right">Rs. ${formatMoney(r.amount)}</td>
@@ -264,17 +388,22 @@ async function loadNextSectionalNumber() {
     const res = await fetch('api.php?action=get_next_sectional_number');
     const data = await res.json();
     if (data.success) input.value = data.next_sectional_number;
-  } catch (e) {}
+  } catch (e) { }
 }
 
 async function generatePdfs() {
-  const fromDate = document.getElementById('gen-from-date').value;
-  const toDate = document.getElementById('gen-to-date').value;
-  const acctMonth = document.getElementById('gen-acct-month').value;
-  const secNum = document.getElementById('gen-sec-num').value;
+  const fromDateInput = document.getElementById('gen-from-date');
+  const toDateInput = document.getElementById('gen-to-date');
+  const acctMonthInput = document.getElementById('gen-acct-month');
+  const secNumInput = document.getElementById('gen-sec-num');
   const statusLabel = document.getElementById('gen-status');
 
-  statusLabel.innerText = "Validating TR codes & generating reports... Please wait.";
+  const fromDate = fromDateInput ? fromDateInput.value : '';
+  const toDate = toDateInput ? toDateInput.value : '';
+  const acctMonth = acctMonthInput ? acctMonthInput.value : '';
+  const secNum = secNumInput ? secNumInput.value : '';
+
+  if (statusLabel) statusLabel.innerText = "Validating TR codes & generating reports... Please wait.";
 
   const formData = new FormData();
   formData.append('from_date', fromDate);
@@ -292,16 +421,16 @@ async function generatePdfs() {
     }
 
     if (!data.success) {
-      statusLabel.innerText = "PDF generation failed.";
+      if (statusLabel) statusLabel.innerText = "PDF generation failed.";
       showAlertModal("PDF Generation Failed", data.error || "An error occurred during PDF generation.", true);
       return;
     }
 
-    statusLabel.innerText = `Generated ${data.generated} PDF report(s) successfully!`;
+    if (statusLabel) statusLabel.innerText = `Generated ${data.generated} PDF report(s) successfully!`;
     loadNextSectionalNumber();
     alert(`Generated ${data.generated} PDF report(s) successfully!`);
   } catch (err) {
-    statusLabel.innerText = "PDF generation failed.";
+    if (statusLabel) statusLabel.innerText = "PDF generation failed.";
     showAlertModal("Error", err.message || "An unknown error occurred.", true);
   }
 }
@@ -316,27 +445,30 @@ async function loadPdfList() {
   const body = document.getElementById('pdf-list-body');
   if (!body) return;
 
-  const startDate = document.getElementById('pdf-start-date').value;
-  const endDate = document.getElementById('pdf-end-date').value;
+  const startDateInput = document.getElementById('pdf-start-date');
+  const endDateInput = document.getElementById('pdf-end-date');
+
+  const startDate = startDateInput ? startDateInput.value : '';
+  const endDate = endDateInput ? endDateInput.value : '';
 
   try {
     const res = await fetch(`api.php?action=get_pdf_list&start_date=${encodeURIComponent(startDate)}&end_date=${encodeURIComponent(endDate)}`);
     const data = await res.json();
 
     if (data.success) {
-      body.innerHTML = data.reports.map(r => `
+      body.innerHTML = (data.reports || []).map(r => `
         <tr>
-          <td>BK/TE/${r.accounting_month}/${r.sectional_number}</td>
-          <td>${r.posting_date} ${r.posting_time}</td>
+          <td>BK/TE/${escapeHtml(r.accounting_month)}/${r.sectional_number}</td>
+          <td>${escapeHtml(r.posting_date)} ${escapeHtml(r.posting_time)}</td>
           <td><strong>${escapeHtml(r.sg_account_name)}</strong></td>
           <td align="right">Rs. ${formatMoney(r.amount)}</td>
-          <td>${r.accounting_month}</td>
-          <td>${r.generation_date}</td>
+          <td>${escapeHtml(r.accounting_month)}</td>
+          <td>${escapeHtml(r.generation_date)}</td>
           <td><a href="api.php?action=download_pdf&id=${r.id}" target="_blank" class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.8rem;">Open PDF</a></td>
         </tr>
       `).join('') || `<tr><td colspan="7" align="center">No generated PDFs found.</td></tr>`;
     }
-  } catch (e) {}
+  } catch (e) { }
 }
 
 // 5. Summary Page Logic
@@ -349,14 +481,18 @@ function initSummaryPage() {
 }
 
 async function loadSummaryReport() {
-  const mode = document.querySelector('input[name="summary-mode"]:checked').value;
-  const from = document.getElementById('sum-from-date').value;
-  const to = document.getElementById('sum-to-date').value;
-  const month = document.getElementById('sum-acct-month').value;
-  const fy = document.getElementById('sum-fy').value;
+  const modeRadio = document.querySelector('input[name="summary-mode"]:checked');
+  const mode = modeRadio ? modeRadio.value : 'month';
+
+  const from = document.getElementById('sum-from-date') ? document.getElementById('sum-from-date').value : '';
+  const to = document.getElementById('sum-to-date') ? document.getElementById('sum-to-date').value : '';
+  const month = document.getElementById('sum-acct-month') ? document.getElementById('sum-acct-month').value : '';
+  const fy = document.getElementById('sum-fy') ? document.getElementById('sum-fy').value : '';
 
   const body = document.getElementById('summary-body');
   const status = document.getElementById('summary-status');
+
+  if (!body) return;
 
   body.innerHTML = `<tr><td colspan="11" align="center">Loading summary report...</td></tr>`;
 
@@ -370,14 +506,14 @@ async function loadSummaryReport() {
       return;
     }
 
-    const records = data.records;
-    status.innerText = `Loaded ${records.length} record(s). ${data.description}`;
+    const records = data.records || [];
+    if (status) status.innerText = `Loaded ${records.length} record(s). ${data.description || ''}`;
 
     let totAmt = 0, totC = 0, totS = 0;
     let rowsHtml = records.map((r, i) => {
-      totAmt += r.total_amount;
-      totC += r.central_share_amount;
-      totS += r.state_share_amount;
+      totAmt += parseFloat(r.total_amount || 0);
+      totC += parseFloat(r.central_share_amount || 0);
+      totS += parseFloat(r.state_share_amount || 0);
       return `
         <tr>
           <td align="center">${i + 1}</td>
@@ -387,10 +523,10 @@ async function loadSummaryReport() {
           <td align="right">Rs. ${formatMoney(r.total_amount)}</td>
           <td align="right">Rs. ${formatMoney(r.central_share_amount)}</td>
           <td align="right">Rs. ${formatMoney(r.state_share_amount)}</td>
-          <td align="center">${r.sub_head}</td>
-          <td align="center">${r.detail_head}</td>
-          <td align="center">${r.sectional_number}</td>
-          <td align="center">${r.posting_date}</td>
+          <td align="center">${escapeHtml(r.sub_head)}</td>
+          <td align="center">${escapeHtml(r.detail_head)}</td>
+          <td align="center">${escapeHtml(r.sectional_number)}</td>
+          <td align="center">${escapeHtml(r.posting_date)}</td>
         </tr>
       `;
     }).join('');
@@ -415,11 +551,13 @@ async function loadSummaryReport() {
 }
 
 function exportSummaryExcel() {
-  const mode = document.querySelector('input[name="summary-mode"]:checked').value;
-  const from = document.getElementById('sum-from-date').value;
-  const to = document.getElementById('sum-to-date').value;
-  const month = document.getElementById('sum-acct-month').value;
-  const fy = document.getElementById('sum-fy').value;
+  const modeRadio = document.querySelector('input[name="summary-mode"]:checked');
+  const mode = modeRadio ? modeRadio.value : 'month';
+
+  const from = document.getElementById('sum-from-date') ? document.getElementById('sum-from-date').value : '';
+  const to = document.getElementById('sum-to-date') ? document.getElementById('sum-to-date').value : '';
+  const month = document.getElementById('sum-acct-month') ? document.getElementById('sum-acct-month').value : '';
+  const fy = document.getElementById('sum-fy') ? document.getElementById('sum-fy').value : '';
 
   window.location.href = `api.php?action=export_summary_excel&filter_type=${mode}&from_date=${encodeURIComponent(from)}&to_date=${encodeURIComponent(to)}&accounting_month=${encodeURIComponent(month)}&financial_year_val=${encodeURIComponent(fy)}`;
 }
@@ -434,14 +572,18 @@ function initDetailedPage() {
 }
 
 async function loadDetailedReport() {
-  const mode = document.querySelector('input[name="detailed-mode"]:checked').value;
-  const from = document.getElementById('det-from-date').value;
-  const to = document.getElementById('det-to-date').value;
-  const month = document.getElementById('det-acct-month').value;
-  const fy = document.getElementById('det-fy').value;
+  const modeRadio = document.querySelector('input[name="detailed-mode"]:checked');
+  const mode = modeRadio ? modeRadio.value : 'date';
+
+  const from = document.getElementById('det-from-date') ? document.getElementById('det-from-date').value : '';
+  const to = document.getElementById('det-to-date') ? document.getElementById('det-to-date').value : '';
+  const month = document.getElementById('det-acct-month') ? document.getElementById('det-acct-month').value : '';
+  const fy = document.getElementById('det-fy') ? document.getElementById('det-fy').value : '';
 
   const body = document.getElementById('detailed-body');
   const status = document.getElementById('detailed-status');
+
+  if (!body) return;
 
   body.innerHTML = `<tr><td colspan="18" align="center">Loading detailed report...</td></tr>`;
 
@@ -455,32 +597,32 @@ async function loadDetailedReport() {
       return;
     }
 
-    const records = data.records;
-    status.innerText = `Loaded ${records.length} record(s). ${data.description}`;
+    const records = data.records || [];
+    if (status) status.innerText = `Loaded ${records.length} record(s). ${data.description || ''}`;
 
     let totAmt = 0;
     let rowsHtml = records.map(r => {
-      totAmt += r.total_amount;
+      totAmt += parseFloat(r.total_amount || 0);
       return `
         <tr>
-          <td align="center">${r.major_head_dr}</td>
-          <td align="center">${r.sub_major_dr}</td>
-          <td align="center">${r.minor_head_dr}</td>
-          <td align="center">${r.sub_head_dr}</td>
-          <td align="center">${r.detail_head_dr}</td>
-          <td align="center">${r.sub_detail_dr}</td>
+          <td align="center">${escapeHtml(r.major_head_dr)}</td>
+          <td align="center">${escapeHtml(r.sub_major_dr)}</td>
+          <td align="center">${escapeHtml(r.minor_head_dr)}</td>
+          <td align="center">${escapeHtml(r.sub_head_dr)}</td>
+          <td align="center">${escapeHtml(r.detail_head_dr)}</td>
+          <td align="center">${escapeHtml(r.sub_detail_dr)}</td>
           <td align="right">Rs. ${formatMoney(r.total_amount)}</td>
-          <td align="center">${r.major_head_cr}</td>
-          <td align="center">${r.sub_major_cr}</td>
-          <td align="center">${r.minor_head_cr}</td>
-          <td align="center">${r.sub_head_cr}</td>
-          <td align="center">${r.detail_head_cr}</td>
-          <td align="center">${r.sub_detail_cr}</td>
-          <td align="center">${r.sectional_no}</td>
+          <td align="center">${escapeHtml(r.major_head_cr)}</td>
+          <td align="center">${escapeHtml(r.sub_major_cr)}</td>
+          <td align="center">${escapeHtml(r.minor_head_cr)}</td>
+          <td align="center">${escapeHtml(r.sub_head_cr)}</td>
+          <td align="center">${escapeHtml(r.detail_head_cr)}</td>
+          <td align="center">${escapeHtml(r.sub_detail_cr)}</td>
+          <td align="center">${escapeHtml(r.sectional_no)}</td>
           <td align="center"><strong>${escapeHtml(r.tr_no)}</strong></td>
           <td>${escapeHtml(r.tr_desc)}</td>
           <td>${escapeHtml(r.ministry_name)}</td>
-          <td align="center">${r.posting_date}</td>
+          <td align="center">${escapeHtml(r.posting_date)}</td>
         </tr>
       `;
     }).join('');
@@ -504,11 +646,13 @@ async function loadDetailedReport() {
 }
 
 function exportDetailedExcel() {
-  const mode = document.querySelector('input[name="detailed-mode"]:checked').value;
-  const from = document.getElementById('det-from-date').value;
-  const to = document.getElementById('det-to-date').value;
-  const month = document.getElementById('det-acct-month').value;
-  const fy = document.getElementById('det-fy').value;
+  const modeRadio = document.querySelector('input[name="detailed-mode"]:checked');
+  const mode = modeRadio ? modeRadio.value : 'date';
+
+  const from = document.getElementById('det-from-date') ? document.getElementById('det-from-date').value : '';
+  const to = document.getElementById('det-to-date') ? document.getElementById('det-to-date').value : '';
+  const month = document.getElementById('det-acct-month') ? document.getElementById('det-acct-month').value : '';
+  const fy = document.getElementById('det-fy') ? document.getElementById('det-fy').value : '';
 
   window.location.href = `api.php?action=export_detailed_excel&filter_type=${mode}&from_date=${encodeURIComponent(from)}&to_date=${encodeURIComponent(to)}&accounting_month=${encodeURIComponent(month)}&financial_year_val=${encodeURIComponent(fy)}`;
 }
@@ -527,17 +671,23 @@ function initMasterPage() {
 let masterRecords = [];
 
 async function loadMasterRecords() {
-  const q = document.getElementById('search-master-input').value;
+  const searchInput = document.getElementById('search-master-input');
+  const q = searchInput ? searchInput.value : '';
+
   const body = document.getElementById('master-body');
   const status = document.getElementById('master-status');
+
+  if (!body) return;
 
   try {
     const res = await fetch(`api.php?action=get_master_records&search=${encodeURIComponent(q)}`);
     const data = await res.json();
 
     if (data.success) {
-      masterRecords = data.records;
-      status.innerText = `Showing ${masterRecords.length} Scheme Configuration Master record(s). Password '12345' is required to save changes.`;
+      masterRecords = data.records || [];
+      if (status) {
+        status.innerText = `Showing ${masterRecords.length} Scheme Configuration Master record(s). Password '12345' is required to save changes.`;
+      }
 
       body.innerHTML = masterRecords.map(r => `
         <tr>
@@ -555,28 +705,45 @@ async function loadMasterRecords() {
         </tr>
       `).join('') || `<tr><td colspan="9" align="center">No scheme master records found.</td></tr>`;
     }
-  } catch (e) {}
+  } catch (e) { }
 }
 
 function openMasterModal(record) {
   const modal = document.getElementById('master-modal');
-  document.getElementById('master-modal-title').innerText = record ? "Edit Scheme Master Record" : "Add New Scheme Master Record";
-  document.getElementById('master-id').value = record ? record.id : '';
-  document.getElementById('master-tr-code').value = record ? record.tr_code : '';
-  document.getElementById('master-tr-desc').value = record ? record.tr_desc : '';
-  document.getElementById('master-controller').value = record ? record.controller : '';
-  document.getElementById('master-css').value = record ? record.css : '';
-  document.getElementById('master-central').value = record ? record.central_share : '100';
-  document.getElementById('master-state').value = record ? record.state_share : '0';
-  document.getElementById('master-sub').value = record ? record.sub_head : '';
-  document.getElementById('master-detail').value = record ? record.detail_head : '';
-  document.getElementById('master-password').value = '';
+  const modalTitle = document.getElementById('master-modal-title');
 
-  modal.classList.add('active');
+  if (modalTitle) {
+    modalTitle.innerText = record ? "Edit Scheme Master Record" : "Add New Scheme Master Record";
+  }
+
+  const elId = document.getElementById('master-id');
+  const elTrCode = document.getElementById('master-tr-code');
+  const elTrDesc = document.getElementById('master-tr-desc');
+  const elController = document.getElementById('master-controller');
+  const elCss = document.getElementById('master-css');
+  const elCentral = document.getElementById('master-central');
+  const elState = document.getElementById('master-state');
+  const elSub = document.getElementById('master-sub');
+  const elDetail = document.getElementById('master-detail');
+  const elPwd = document.getElementById('master-password');
+
+  if (elId) elId.value = record ? record.id : '';
+  if (elTrCode) elTrCode.value = record ? record.tr_code : '';
+  if (elTrDesc) elTrDesc.value = record ? record.tr_desc : '';
+  if (elController) elController.value = record ? record.controller : '';
+  if (elCss) elCss.value = record ? record.css : '';
+  if (elCentral) elCentral.value = record ? record.central_share : '100';
+  if (elState) elState.value = record ? record.state_share : '0';
+  if (elSub) elSub.value = record ? record.sub_head : '';
+  if (elDetail) elDetail.value = record ? record.detail_head : '';
+  if (elPwd) elPwd.value = '';
+
+  if (modal) modal.classList.add('active');
 }
 
 function closeMasterModal() {
-  document.getElementById('master-modal').classList.remove('active');
+  const modal = document.getElementById('master-modal');
+  if (modal) modal.classList.remove('active');
 }
 
 function editMasterRecord(id) {
@@ -585,9 +752,13 @@ function editMasterRecord(id) {
 }
 
 async function saveMasterRecord() {
-  const id = document.getElementById('master-id').value;
-  const pwd = document.getElementById('master-password').value;
-  const trCode = document.getElementById('master-tr-code').value;
+  const elId = document.getElementById('master-id');
+  const elPwd = document.getElementById('master-password');
+  const elTrCode = document.getElementById('master-tr-code');
+
+  const id = elId ? elId.value : '';
+  const pwd = elPwd ? elPwd.value : '';
+  const trCode = elTrCode ? elTrCode.value : '';
 
   if (!trCode.trim()) {
     alert("TR Code is required.");
@@ -602,13 +773,13 @@ async function saveMasterRecord() {
   formData.append('id', id);
   formData.append('password', pwd);
   formData.append('tr_code', trCode);
-  formData.append('tr_desc', document.getElementById('master-tr-desc').value);
-  formData.append('controller', document.getElementById('master-controller').value);
-  formData.append('css', document.getElementById('master-css').value);
-  formData.append('central_share', document.getElementById('master-central').value);
-  formData.append('state_share', document.getElementById('master-state').value);
-  formData.append('sub_head', document.getElementById('master-sub').value);
-  formData.append('detail_head', document.getElementById('master-detail').value);
+  formData.append('tr_desc', document.getElementById('master-tr-desc') ? document.getElementById('master-tr-desc').value : '');
+  formData.append('controller', document.getElementById('master-controller') ? document.getElementById('master-controller').value : '');
+  formData.append('css', document.getElementById('master-css') ? document.getElementById('master-css').value : '');
+  formData.append('central_share', document.getElementById('master-central') ? document.getElementById('master-central').value : '');
+  formData.append('state_share', document.getElementById('master-state') ? document.getElementById('master-state').value : '');
+  formData.append('sub_head', document.getElementById('master-sub') ? document.getElementById('master-sub').value : '');
+  formData.append('detail_head', document.getElementById('master-detail') ? document.getElementById('master-detail').value : '');
 
   const action = id ? 'update_master_record' : 'add_master_record';
 

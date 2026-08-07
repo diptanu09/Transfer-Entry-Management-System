@@ -30,32 +30,117 @@ function send_error($message, $status = 400) {
     send_json(['success' => false, 'error' => $message], $status);
 }
 
-// Unauthenticated actions allowed without session
+// -------------------------------------------------------------------
+// 1. User Registration Action
+// -------------------------------------------------------------------
+if ($action === 'register') {
+    $username  = strtolower(trim($_POST['username'] ?? ''));
+    $password  = trim($_POST['password'] ?? '');
+    $full_name = trim($_POST['full_name'] ?? '');
+    $email     = strtolower(trim($_POST['email'] ?? ''));
+
+    if (empty($username) || empty($password)) {
+        send_error("Username and Password are required.", 400);
+    }
+
+    if (strlen($password) < 4) {
+        send_error("Password must be at least 4 characters long.", 400);
+    }
+
+    $pdo = get_db_connection();
+
+    // Check if username already exists
+    $check_stmt = $pdo->prepare("SELECT id FROM users WHERE LOWER(username) = ?");
+    $check_stmt->execute([$username]);
+    if ($check_stmt->fetch()) {
+        send_error("Username '{$username}' is already registered. Please choose another.", 409);
+    }
+
+    // Encrypt password using BCRYPT
+    $hash = password_hash($password, PASSWORD_BCRYPT);
+
+    $ins_stmt = $pdo->prepare("
+        INSERT INTO users (username, password_hash, full_name, email, role)
+        VALUES (?, ?, ?, ?, 'USER')
+    ");
+    $ins_stmt->execute([$username, $hash, $full_name, $email]);
+
+
+    $_SESSION['user'] = $username;
+    $_SESSION['full_name'] = $full_name ?: $username;
+
+    send_json([
+        'success' => true,
+        'message' => 'Registration successful!',
+        'user'    => $username,
+        'full_name' => $_SESSION['full_name']
+    ]);
+}
+
+// -------------------------------------------------------------------
+// 2. Secure User Login Action (Database + password_verify)
+// -------------------------------------------------------------------
 if ($action === 'login') {
-    $user = trim($_POST['user_id'] ?? '');
-    $pwd = trim($_POST['password'] ?? '');
-    if ($user === 'amit' && $pwd === '12345') {
-        $_SESSION['user'] = 'amit';
-        send_json(['success' => true, 'user' => 'amit']);
+    $user = strtolower(trim($_POST['user_id'] ?? $_POST['username'] ?? ''));
+    $pwd  = trim($_POST['password'] ?? '');
+
+    if (empty($user) || empty($pwd)) {
+        send_error("Username and Password are required.", 400);
+    }
+
+    $pdo = get_db_connection();
+    $stmt = $pdo->prepare("SELECT username, password_hash, full_name, role FROM users WHERE LOWER(username) = ?");
+    $stmt->execute([$user]);
+    $row = $stmt->fetch();
+
+    if (!$row) {
+        send_error("User '{$user}' not found in database!", 401);
+    }
+
+    $stored_hash = $row['password_hash'] ?? '';
+
+    // Check if the stored hash was truncated by Oracle
+    if (strlen($stored_hash) < 60) {
+        send_error("Stored password hash is corrupted/truncated (" . strlen($stored_hash) . " chars). Please alter USERS table and re-register.", 500);
+    }
+
+    if (password_verify($pwd, $stored_hash)) {
+        $_SESSION['user']      = $row['username'];
+        $_SESSION['full_name'] = $row['full_name'] ?: $row['username'];
+        $_SESSION['role']      = $row['role'] ?? 'USER';
+
+        send_json([
+            'success'   => true,
+            'user'      => $row['username'],
+            'full_name' => $_SESSION['full_name'],
+            'role'      => $_SESSION['role']
+        ]);
     } else {
-        send_error("Invalid Login ID or Password!", 401);
+        send_error("Incorrect password for user '{$user}'.", 401);
     }
 }
 
+// -------------------------------------------------------------------
+// 3. User Logout Action
+// -------------------------------------------------------------------
 if ($action === 'logout') {
-    unset($_SESSION['user']);
+    session_unset();
     session_destroy();
     send_json(['success' => true]);
 }
 
+// -------------------------------------------------------------------
+// 4. Session Check Action
+// -------------------------------------------------------------------
 if ($action === 'check_auth') {
     send_json([
         'authenticated' => !empty($_SESSION['user']),
-        'user' => $_SESSION['user'] ?? null
+        'user'          => $_SESSION['user'] ?? null,
+        'full_name'     => $_SESSION['full_name'] ?? null
     ]);
 }
 
-// Protect all remaining endpoints
+// Protect all remaining application endpoints
 if (empty($_SESSION['user'])) {
     send_error("Authentication required. Please log in.", 401);
 }

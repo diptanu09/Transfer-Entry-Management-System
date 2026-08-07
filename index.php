@@ -420,26 +420,51 @@ $current_month = date('m/Y');
 
   <!-- Application Login Modal -->
   <div id="login-modal" class="modal-backdrop active" style="z-index: 2000; background: rgba(15, 23, 42, 0.85);">
-    <div class="modal" style="max-width: 400px; padding: 32px;">
-      <div style="text-align: center; margin-bottom: 20px;">
-        <h2 style="font-size: 1.5rem; font-weight: 700; color: var(--primary);">System Login</h2>
-        <p style="font-size: 0.875rem; color: var(--text-muted); margin-top: 4px;">Enter your credentials to access the system</p>
+    <div class="modal" style="max-width: 420px; padding: 28px;">
+      
+      <div style="display: flex; border-bottom: 2px solid #e2e8f0; margin-bottom: 20px;">
+        <button id="auth-tab-login" class="btn" onclick="switchAuthTab('login')" style="flex: 1; background: transparent; color: var(--primary); font-weight: 700; border-bottom: 3px solid var(--primary); border-radius: 0;">Login</button>
+        <button id="auth-tab-register" class="btn" onclick="switchAuthTab('register')" style="flex: 1; background: transparent; color: #64748b; font-weight: 600; border-bottom: 3px solid transparent; border-radius: 0;">Register User</button>
       </div>
 
       <form id="login-form">
         <div class="form-group" style="margin-bottom: 16px;">
-          <label for="login-user-id">Login ID</label>
-          <input type="text" id="login-user-id" class="form-control" placeholder="Login ID (amit)" required value="amit">
+          <label for="login-user-id">Username / Login ID</label>
+          <input type="text" id="login-user-id" class="form-control" placeholder="Username (e.g. User)" required value="">
         </div>
-        <div class="form-group" style="margin-bottom: 24px;">
+        <div class="form-group" style="margin-bottom: 20px;">
           <label for="login-password">Password</label>
-          <input type="password" id="login-password" class="form-control" placeholder="Password (12345)" required value="12345">
+          <input type="password" id="login-password" class="form-control" placeholder="Password" required value="">
         </div>
 
         <div id="login-error-msg" style="display: none; color: var(--danger); font-size: 0.85rem; margin-bottom: 16px; text-align: center; font-weight: 600;"></div>
 
-        <button type="submit" class="btn btn-primary" style="width: 100%; padding: 12px; font-size: 1rem;">Login</button>
+        <button type="submit" class="btn btn-primary" style="width: 100%; padding: 12px; font-size: 1rem;">Sign In</button>
       </form>
+
+      <form id="register-form" style="display: none;">
+        <div class="form-group" style="margin-bottom: 14px;">
+          <label for="reg-username">Username *</label>
+          <input type="text" id="reg-username" class="form-control" placeholder="Choose a username" required>
+        </div>
+        <div class="form-group" style="margin-bottom: 14px;">
+          <label for="reg-full-name">Full Name</label>
+          <input type="text" id="reg-full-name" class="form-control" placeholder="e.g. John Doe">
+        </div>
+        <div class="form-group" style="margin-bottom: 14px;">
+          <label for="reg-email">Email Address</label>
+          <input type="email" id="reg-email" class="form-control" placeholder="john@example.com">
+        </div>
+        <div class="form-group" style="margin-bottom: 20px;">
+          <label for="reg-password">Password *</label>
+          <input type="password" id="reg-password" class="form-control" placeholder="Min 4 characters" required>
+        </div>
+
+        <div id="register-error-msg" style="display: none; color: var(--danger); font-size: 0.85rem; margin-bottom: 16px; text-align: center; font-weight: 600;"></div>
+
+        <button type="submit" class="btn btn-primary" style="width: 100%; padding: 12px; font-size: 1rem; background-color: #059669;">Create Account & Login</button>
+      </form>
+
     </div>
   </div>
 
