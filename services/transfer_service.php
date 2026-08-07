@@ -8,13 +8,27 @@ require_once __DIR__ . '/../db.php';
 require_once __DIR__ . '/../helpers.php';
 require_once __DIR__ . '/../fpdf.php';
 
-function get_next_sectional_number() {
+/**
+ * @return int
+ */
+function get_next_sectional_number(): int {
     $pdo = initialize_database();
     $stmt = $pdo->query("SELECT COALESCE(MAX(sectional_number), 0) + 1 FROM generated_transfer_reports");
     return (int)$stmt->fetchColumn();
 }
 
-function generate_transfer_entry_pdf_content($record, $sectional_number, $accounting_month, $generation_date, $include_signatures = false) {
+/**
+ * Generates binary PDF content for Transfer Entry voucher.
+ *
+ * @param array $record
+ * @param int $sectional_number
+ * @param string $accounting_month
+ * @param string $generation_date
+ * @param bool $include_signatures
+ * @return string
+ */
+function generate_transfer_entry_pdf_content(array $record, int $sectional_number, string $accounting_month, string $generation_date, bool $include_signatures = false): string {
+    /** @var FPDF $pdf */
     $pdf = new FPDF('P', 'mm', 'A4');
     $pdf->SetMargins(16, 16, 16);
     $pdf->AddPage();
@@ -126,7 +140,17 @@ function generate_transfer_entry_pdf_content($record, $sectional_number, $accoun
     return $pdf->Output('S');
 }
 
-function generate_transfer_reports($start_date_str, $end_date_str, $accounting_month, $starting_sec_num = null) {
+/**
+ * Validates TR codes and generates TE PDF reports for date range.
+ *
+ * @param string $start_date_str
+ * @param string $end_date_str
+ * @param string $accounting_month
+ * @param int|null $starting_sec_num
+ * @return array
+ * @throws Exception
+ */
+function generate_transfer_reports(string $start_date_str, string $end_date_str, string $accounting_month, ?int $starting_sec_num = null): array {
     parse_accounting_month($accounting_month);
     $start_db = to_db_date($start_date_str);
     $end_db = to_db_date($end_date_str);
@@ -162,6 +186,9 @@ function generate_transfer_reports($start_date_str, $end_date_str, $accounting_m
     $stmt->execute([$start_db, $end_db]);
     $records = $stmt->fetchAll();
 
+    $skipped_count = 0;
+    $warnings = [];
+
     if (empty($records)) {
         return [
             'generated' => 0,
@@ -177,9 +204,6 @@ function generate_transfer_reports($start_date_str, $end_date_str, $accounting_m
     foreach ($records as $r) {
         if ($r['master_tr_code'] === null || $r['sub_head'] === null || $r['detail_head'] === null) {
             $raw_code = trim($r['sg_account_name'] ?? '');
-            $state_name = $r['state_government'] ?? '';
-            $p_date = !empty($r['posting_date']) ? format_date($r['posting_date']) : '';
-
             $label = $raw_code !== '' ? display_tr_code($raw_code) : "Blank/Unmapped TR Code";
             $amt = (float)($r['amount'] ?? 0.0);
 
@@ -188,6 +212,7 @@ function generate_transfer_reports($start_date_str, $end_date_str, $accounting_m
             }
             $missing_tr_map[$label]['amount'] += $amt;
             $missing_tr_map[$label]['count'] += 1;
+            $skipped_count++;
         } else {
             $valid_records[] = $r;
         }
@@ -243,8 +268,8 @@ function generate_transfer_reports($start_date_str, $end_date_str, $accounting_m
         $pdo->commit();
         return [
             'generated' => $generated_count,
-            'skipped' => 0,
-            'warnings' => [],
+            'skipped' => $skipped_count,
+            'warnings' => $warnings,
             'missing_tr_codes' => []
         ];
     } catch (Exception $e) {
@@ -253,7 +278,12 @@ function generate_transfer_reports($start_date_str, $end_date_str, $accounting_m
     }
 }
 
-function get_generated_reports($start_date = null, $end_date = null) {
+/**
+ * @param string|null $start_date
+ * @param string|null $end_date
+ * @return array
+ */
+function get_generated_reports(?string $start_date = null, ?string $end_date = null): array {
     $pdo = initialize_database();
     $where = [];
     $params = [];
@@ -287,7 +317,12 @@ function get_generated_reports($start_date = null, $end_date = null) {
     return $stmt->fetchAll();
 }
 
-function download_generated_pdf($report_id) {
+/**
+ * @param int|string $report_id
+ * @return void
+ * @throws Exception
+ */
+function download_generated_pdf($report_id): void {
     $pdo = initialize_database();
     $stmt = $pdo->prepare("SELECT pdf_file_name, pdf_content FROM generated_transfer_reports WHERE id = ?");
     $stmt->execute([(int)$report_id]);

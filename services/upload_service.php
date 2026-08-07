@@ -1,13 +1,20 @@
 <?php
 /**
- * Daily Payment file upload & import service for PHP Application.
+ * Daily Payment file upload & import service for Transfer Entry Management System.
  */
 
 require_once __DIR__ . '/../db.php';
 require_once __DIR__ . '/../helpers.php';
 require_once __DIR__ . '/master_service.php';
 
-function import_daily_payment_file($file_path, $file_name, $report_date_input) {
+/**
+ * @param string $file_path
+ * @param string $file_name
+ * @param string $report_date_input
+ * @return int
+ * @throws Exception
+ */
+function import_daily_payment_file(string $file_path, string $file_name, string $report_date_input): int {
     $pdo = initialize_database();
     $report_date = to_db_date($report_date_input);
     if (!$report_date) {
@@ -51,13 +58,6 @@ function import_daily_payment_file($file_path, $file_name, $report_date_input) {
         throw new Exception("The uploaded file contains no data.");
     }
 
-        // In services/upload_service.php inside import_daily_payment_file()
-    if (!isset($_FILES['file']) || $_FILES['file']['error'] !== UPLOAD_ERR_OK) {
-        $errCode = $_FILES['file']['error'] ?? -1;
-        throw new Exception("File upload failed with error code: {$errCode}. Check server file permissions and php.ini limits.");
-    }
-
-
     // Identify header row
     $header_idx = -1;
     $col_map = [];
@@ -78,7 +78,7 @@ function import_daily_payment_file($file_path, $file_name, $report_date_input) {
         }
     }
 
-    // Call get_scheme_master_map() from master_service.php
+    // Retrieve master scheme TR code mappings
     $valid_master_map = get_scheme_master_map();
 
     $parsed_records = [];
@@ -191,7 +191,10 @@ function import_daily_payment_file($file_path, $file_name, $report_date_input) {
     }
 }
 
-function get_recent_uploads() {
+/**
+ * @return array
+ */
+function get_recent_uploads(): array {
     $pdo = initialize_database();
     $stmt = $pdo->query("
         SELECT source_file_name, report_date, COUNT(*) as record_count, SUM(amount) as total_amount, MAX(created_at) as uploaded_at
@@ -202,7 +205,12 @@ function get_recent_uploads() {
     return $stmt->fetchAll();
 }
 
-function get_uploaded_file_records($source_file_name, $report_date) {
+/**
+ * @param string $source_file_name
+ * @param string $report_date
+ * @return array
+ */
+function get_uploaded_file_records(string $source_file_name, string $report_date): array {
     $pdo = initialize_database();
     $stmt = $pdo->prepare("
         SELECT posting_date, posting_time, state_government, sg_account_name, amount, cg_account_udch_code
@@ -214,7 +222,12 @@ function get_uploaded_file_records($source_file_name, $report_date) {
     return $stmt->fetchAll();
 }
 
-function get_daily_payment_records($start_date = null, $end_date = null) {
+/**
+ * @param string|null $start_date
+ * @param string|null $end_date
+ * @return array
+ */
+function get_daily_payment_records(?string $start_date = null, ?string $end_date = null): array {
     $pdo = initialize_database();
     $where = [];
     $params = [];

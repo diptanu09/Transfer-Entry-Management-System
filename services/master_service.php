@@ -8,14 +8,20 @@ require_once __DIR__ . '/../helpers.php';
 
 const MASTER_PASSWORD = "12345";
 
-function verify_password($password) {
+/**
+ * @param string $password
+ * @return bool
+ */
+function verify_password(string $password): bool {
     return ($password === MASTER_PASSWORD);
 }
 
 /**
  * Helper function to retrieve all valid TR codes mapped from the master table.
+ *
+ * @return array
  */
-function get_scheme_master_map() {
+function get_scheme_master_map(): array {
     $pdo = initialize_database();
     $stmt = $pdo->query("
         WITH ranked_master AS (
@@ -32,7 +38,7 @@ function get_scheme_master_map() {
         FROM ranked_master
         WHERE row_rank = 1
     ");
-    
+
     $rows = $stmt->fetchAll();
     $map = [];
     foreach ($rows as $m) {
@@ -43,7 +49,11 @@ function get_scheme_master_map() {
     return $map;
 }
 
-function get_master_records($search_query = null) {
+/**
+ * @param string|null $search_query
+ * @return array
+ */
+function get_master_records(?string $search_query = null): array {
     $pdo = initialize_database();
     $where = [];
     $params = [];
@@ -65,7 +75,13 @@ function get_master_records($search_query = null) {
     return $stmt->fetchAll();
 }
 
-function add_master_record($data, $password) {
+/**
+ * @param array $data
+ * @param string $password
+ * @return int
+ * @throws Exception
+ */
+function add_master_record(array $data, string $password): int {
     if (!verify_password($password)) {
         throw new Exception("Incorrect password! Master record changes require password '12345'.");
     }
@@ -103,7 +119,14 @@ function add_master_record($data, $password) {
     return $pdo->lastInsertId();
 }
 
-function update_master_record($id, $data, $password) {
+/**
+ * @param int|string $id
+ * @param array $data
+ * @param string $password
+ * @return void
+ * @throws Exception
+ */
+function update_master_record($id, array $data, string $password): void {
     if (!verify_password($password)) {
         throw new Exception("Incorrect password! Master record changes require password '12345'.");
     }
@@ -141,7 +164,13 @@ function update_master_record($id, $data, $password) {
     $pdo->commit();
 }
 
-function delete_master_record($id, $password) {
+/**
+ * @param int|string $id
+ * @param string $password
+ * @return void
+ * @throws Exception
+ */
+function delete_master_record($id, string $password): void {
     if (!verify_password($password)) {
         throw new Exception("Incorrect password! Master record changes require password '12345'.");
     }

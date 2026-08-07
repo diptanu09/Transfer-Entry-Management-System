@@ -11,10 +11,17 @@ define('DB_USER', 'TransferEntry');      // Schema Username
 define('DB_PASS', 'TransferEntry');      // Schema Password
 
 class Oci8PdoWrapper {
+    /** @var resource|null */
     private $conn;
+    /** @var bool */
     private $in_transaction = false;
 
-    public function __construct($username, $password, $connection_string) {
+    /**
+     * @param string $username
+     * @param string $password
+     * @param string $connection_string
+     */
+    public function __construct(string $username, string $password, string $connection_string) {
         $this->conn = @oci_connect($username, $password, $connection_string, 'AL32UTF8');
         if (!$this->conn) {
             $e = oci_error();
@@ -22,27 +29,45 @@ class Oci8PdoWrapper {
         }
     }
 
-    public function prepare($sql) {
+    /**
+     * @param string $sql
+     * @return Oci8StatementWrapper
+     */
+    public function prepare(string $sql): Oci8StatementWrapper {
         return new Oci8StatementWrapper($this->conn, $sql, $this->in_transaction);
     }
 
-    public function query($sql) {
+    /**
+     * @param string $sql
+     * @return Oci8StatementWrapper
+     */
+    public function query(string $sql): Oci8StatementWrapper {
         $stmt = $this->prepare($sql);
         $stmt->execute();
         return $stmt;
     }
 
-    public function exec($sql) {
+    /**
+     * @param string $sql
+     * @return bool
+     */
+    public function exec(string $sql): bool {
         $stmt = $this->prepare($sql);
         return $stmt->execute();
     }
 
-    public function beginTransaction() {
+    /**
+     * @return bool
+     */
+    public function beginTransaction(): bool {
         $this->in_transaction = true;
         return true;
     }
 
-    public function commit() {
+    /**
+     * @return bool
+     */
+    public function commit(): bool {
         if ($this->conn) {
             oci_commit($this->conn);
         }
@@ -50,7 +75,10 @@ class Oci8PdoWrapper {
         return true;
     }
 
-    public function rollBack() {
+    /**
+     * @return bool
+     */
+    public function rollBack(): bool {
         if ($this->conn) {
             oci_rollback($this->conn);
         }
@@ -58,19 +86,33 @@ class Oci8PdoWrapper {
         return true;
     }
 
-    public function lastInsertId($name = null) {
+    /**
+     * @param string|null $name
+     * @return int
+     */
+    public function lastInsertId(?string $name = null): int {
         return 0;
     }
 }
 
 class Oci8StatementWrapper {
+    /** @var resource */
     private $conn;
+    /** @var string */
     private $sql;
+    /** @var resource */
     private $stmt;
+    /** @var bool */
     private $in_transaction;
+    /** @var array */
     private $bound_params = [];
 
-    public function __construct($conn, $sql, $in_transaction = false) {
+    /**
+     * @param resource $conn
+     * @param string $sql
+     * @param bool $in_transaction
+     */
+    public function __construct($conn, string $sql, bool $in_transaction = false) {
         $this->conn = $conn;
         $this->in_transaction = $in_transaction;
 
@@ -88,15 +130,16 @@ class Oci8StatementWrapper {
         }
     }
 
-    public function execute($params = []) {
+    /**
+     * @param array $params
+     * @return bool
+     */
+    public function execute(array $params = []): bool {
         if (!empty($params)) {
-            // Re-index array sequentially
-            $params = array_values($params);
-            $this->bound_params = $params; // Store in object state to preserve reference scope
+            $this->bound_params = array_values($params);
 
             foreach ($this->bound_params as $index => &$value) {
                 $param_name = ":p" . ($index + 1);
-                // Bind parameter explicitly by reference
                 oci_bind_by_name($this->stmt, $param_name, $this->bound_params[$index]);
             }
         }
@@ -111,7 +154,10 @@ class Oci8StatementWrapper {
         return true;
     }
 
-    public function fetchAll() {
+    /**
+     * @return array
+     */
+    public function fetchAll(): array {
         $rows = [];
         oci_fetch_all($this->stmt, $rows, 0, -1, OCI_FETCHSTATEMENT_BY_ROW + OCI_ASSOC);
         
@@ -129,6 +175,9 @@ class Oci8StatementWrapper {
         return $result;
     }
 
+    /**
+     * @return array|bool
+     */
     public function fetch() {
         $row = oci_fetch_array($this->stmt, OCI_ASSOC + OCI_RETURN_NULLS + OCI_RETURN_LOBS);
         if (!$row) return false;
@@ -143,13 +192,19 @@ class Oci8StatementWrapper {
         return $lower_row;
     }
 
+    /**
+     * @return mixed
+     */
     public function fetchColumn() {
         $row = oci_fetch_array($this->stmt, OCI_NUM);
         return $row ? $row[0] : false;
     }
 }
 
-function get_db_connection() {
+/**
+ * @return Oci8PdoWrapper
+ */
+function get_db_connection(): Oci8PdoWrapper {
     static $db = null;
     if ($db === null) {
         $tns = "(DESCRIPTION =
@@ -162,6 +217,9 @@ function get_db_connection() {
     return $db;
 }
 
-function initialize_database() {
+/**
+ * @return Oci8PdoWrapper
+ */
+function initialize_database(): Oci8PdoWrapper {
     return get_db_connection();
 }
