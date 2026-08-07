@@ -38,6 +38,7 @@ $current_month = date('m/Y');
       <button class="tab-btn" data-tab="tab-summary">📈 Summary Reports</button>
       <button class="tab-btn" data-tab="tab-detailed">📋 Transfer Entry Report</button>
       <button class="tab-btn" data-tab="tab-master">⚙️ Scheme Config Master</button>
+      <button class="tab-btn" data-tab="tab-users" id="nav-tab-users" style="display: none;">👥 User Approvals & Roles</button>
     </nav>
 
     <!-- Tab 1: Upload Daily File -->
@@ -354,7 +355,39 @@ $current_month = date('m/Y');
       </div>
     </div>
   </div>
+  <div class="form-group" style="margin-bottom: 14px;">
+    <label for="reg-role">Requested Role</label>
+    <select id="reg-role" class="form-control">
+      <option value="OPERATOR">Operator (Upload & Generate PDFs)</option>
+      <option value="VIEWER">Viewer (Read-Only Access)</option>
+    </select>
+  </div>
+  <!-- Tab 7: Scheme Config Master -->
+ <div id="tab-users" class="tab-content">
+  <div class="card">
+    <h2 class="card-title">User Approvals & Role Management</h2>
+    <p class="card-subtitle">Approve new registrations, assign roles (Admin, Operator, Viewer), or remove accounts.</p>
 
+    <div class="table-responsive" style="margin-top: 16px;">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Username</th>
+            <th>Full Name</th>
+            <th>Email</th>
+            <th>Current Role</th>
+            <th>Status</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="users-table-body">
+          <tr><td colspan="7" align="center">Loading users...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
   <!-- Alert / Error Modal -->
   <div id="alert-modal" class="modal-backdrop">
     <div class="modal">

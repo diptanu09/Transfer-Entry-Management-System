@@ -1,6 +1,7 @@
 <?php
 /**
- * RESTful JSON API Router for PHP Application.
+ * RESTful JSON API Router for Transfer Entry Management System.
+ * Supports RBAC (ADMIN, OPERATOR, VIEWER) & Admin Approval Workflow.
  */
 
 header("Access-Control-Allow-Origin: *");
@@ -30,14 +31,26 @@ function send_error($message, $status = 400) {
     send_json(['success' => false, 'error' => $message], $status);
 }
 
+function require_role($allowed_roles) {
+    $current_role = $_SESSION['role'] ?? 'VIEWER';
+    if (!in_array($current_role, $allowed_roles)) {
+        send_error("Access Denied: Your role ({$current_role}) does not have permission to perform this action.", 403);
+    }
+}
+
 // -------------------------------------------------------------------
-// 1. User Registration Action
+// 1. REGISTER ACTION (Requires Admin Approval before login)
 // -------------------------------------------------------------------
 if ($action === 'register') {
     $username  = strtolower(trim($_POST['username'] ?? ''));
     $password  = trim($_POST['password'] ?? '');
     $full_name = trim($_POST['full_name'] ?? '');
     $email     = strtolower(trim($_POST['email'] ?? ''));
+    $req_role  = strtoupper(trim($_POST['requested_role'] ?? 'OPERATOR'));
+
+    if (!in_array($req_role, ['OPERATOR', 'VIEWER'])) {
+        $req_role = 'OPERATOR';
+    }
 
     if (empty($username) || empty($password)) {
         send_error("Username and Password are required.", 400);
@@ -49,36 +62,30 @@ if ($action === 'register') {
 
     $pdo = get_db_connection();
 
-    // Check if username already exists
+    // Check duplicate username
     $check_stmt = $pdo->prepare("SELECT id FROM users WHERE LOWER(username) = ?");
     $check_stmt->execute([$username]);
     if ($check_stmt->fetch()) {
-        send_error("Username '{$username}' is already registered. Please choose another.", 409);
+        send_error("Username '{$username}' is already registered.", 409);
     }
 
-    // Encrypt password using BCRYPT
     $hash = password_hash($password, PASSWORD_BCRYPT);
 
     $ins_stmt = $pdo->prepare("
-        INSERT INTO users (username, password_hash, full_name, email, role)
-        VALUES (?, ?, ?, ?, 'USER')
+        INSERT INTO users (username, password_hash, full_name, email, role, is_approved, status)
+        VALUES (?, ?, ?, ?, ?, 0, 'PENDING')
     ");
-    $ins_stmt->execute([$username, $hash, $full_name, $email]);
-
-
-    $_SESSION['user'] = $username;
-    $_SESSION['full_name'] = $full_name ?: $username;
+    $ins_stmt->execute([$username, $hash, $full_name, $email, $req_role]);
+    $pdo->commit();
 
     send_json([
         'success' => true,
-        'message' => 'Registration successful!',
-        'user'    => $username,
-        'full_name' => $_SESSION['full_name']
+        'message' => 'Registration submitted successfully! Please wait for an Administrator to approve your account before logging in.'
     ]);
 }
 
 // -------------------------------------------------------------------
-// 2. Secure User Login Action (Database + password_verify)
+// 2. LOGIN ACTION (Verifies Approval Status & Role)
 // -------------------------------------------------------------------
 if ($action === 'login') {
     $user = strtolower(trim($_POST['user_id'] ?? $_POST['username'] ?? ''));
@@ -89,25 +96,26 @@ if ($action === 'login') {
     }
 
     $pdo = get_db_connection();
-    $stmt = $pdo->prepare("SELECT username, password_hash, full_name, role FROM users WHERE LOWER(username) = ?");
+    $stmt = $pdo->prepare("SELECT username, password_hash, full_name, role, is_approved, status FROM users WHERE LOWER(username) = ?");
     $stmt->execute([$user]);
     $row = $stmt->fetch();
 
     if (!$row) {
-        send_error("User '{$user}' not found in database!", 401);
+        send_error("Invalid Username or Password!", 401);
     }
 
-    $stored_hash = $row['password_hash'] ?? '';
+    // Check approval status
+    $is_approved = (int)($row['is_approved'] ?? 0);
+    $status      = strtoupper($row['status'] ?? 'PENDING');
 
-    // Check if the stored hash was truncated by Oracle
-    if (strlen($stored_hash) < 60) {
-        send_error("Stored password hash is corrupted/truncated (" . strlen($stored_hash) . " chars). Please alter USERS table and re-register.", 500);
+    if ($is_approved !== 1 || $status !== 'APPROVED') {
+        send_error("Account Pending Approval: Your account has not been approved by an Administrator yet.", 403);
     }
 
-    if (password_verify($pwd, $stored_hash)) {
+    if (password_verify($pwd, $row['password_hash'])) {
         $_SESSION['user']      = $row['username'];
         $_SESSION['full_name'] = $row['full_name'] ?: $row['username'];
-        $_SESSION['role']      = $row['role'] ?? 'USER';
+        $_SESSION['role']      = strtoupper($row['role'] ?? 'VIEWER');
 
         send_json([
             'success'   => true,
@@ -116,12 +124,12 @@ if ($action === 'login') {
             'role'      => $_SESSION['role']
         ]);
     } else {
-        send_error("Incorrect password for user '{$user}'.", 401);
+        send_error("Invalid Username or Password!", 401);
     }
 }
 
 // -------------------------------------------------------------------
-// 3. User Logout Action
+// 3. LOGOUT & CHECK AUTH
 // -------------------------------------------------------------------
 if ($action === 'logout') {
     session_unset();
@@ -129,28 +137,80 @@ if ($action === 'logout') {
     send_json(['success' => true]);
 }
 
-// -------------------------------------------------------------------
-// 4. Session Check Action
-// -------------------------------------------------------------------
 if ($action === 'check_auth') {
     send_json([
         'authenticated' => !empty($_SESSION['user']),
         'user'          => $_SESSION['user'] ?? null,
-        'full_name'     => $_SESSION['full_name'] ?? null
+        'full_name'     => $_SESSION['full_name'] ?? null,
+        'role'          => $_SESSION['role'] ?? 'VIEWER'
     ]);
 }
 
-// Protect all remaining application endpoints
+// Protect remaining actions
 if (empty($_SESSION['user'])) {
     send_error("Authentication required. Please log in.", 401);
 }
 
 try {
     switch ($action) {
+        // =========================================================
+        // USER MANAGEMENT ENDPOINTS (ADMIN ONLY)
+        // =========================================================
+        case 'get_users_list':
+            require_role(['ADMIN']);
+            $pdo = get_db_connection();
+            $stmt = $pdo->query("SELECT id, username, full_name, email, role, is_approved, status, created_at FROM users ORDER BY is_approved ASC, id DESC");
+            send_json(['success' => true, 'users' => $stmt->fetchAll()]);
+            break;
+
+        case 'approve_user':
+            require_role(['ADMIN']);
+            $user_id = (int)($_POST['user_id'] ?? 0);
+            $role    = strtoupper(trim($_POST['role'] ?? 'OPERATOR'));
+
+            if (!$user_id) send_error("User ID is required.");
+            if (!in_array($role, ['ADMIN', 'OPERATOR', 'VIEWER'])) $role = 'OPERATOR';
+
+            $pdo = get_db_connection();
+            $stmt = $pdo->prepare("UPDATE users SET is_approved = 1, status = 'APPROVED', role = ? WHERE id = ?");
+            $stmt->execute([$role, $user_id]);
+            $pdo->commit();
+            send_json(['success' => true, 'message' => 'User approved successfully.']);
+            break;
+
+        case 'update_user_role':
+            require_role(['ADMIN']);
+            $user_id = (int)($_POST['user_id'] ?? 0);
+            $role    = strtoupper(trim($_POST['role'] ?? 'OPERATOR'));
+
+            if (!$user_id) send_error("User ID is required.");
+            if (!in_array($role, ['ADMIN', 'OPERATOR', 'VIEWER'])) send_error("Invalid role.");
+
+            $pdo = get_db_connection();
+            $stmt = $pdo->prepare("UPDATE users SET role = ? WHERE id = ?");
+            $stmt->execute([$role, $user_id]);
+            $pdo->commit();
+            send_json(['success' => true, 'message' => 'User role updated successfully.']);
+            break;
+
+        case 'reject_user':
+            require_role(['ADMIN']);
+            $user_id = (int)($_POST['user_id'] ?? 0);
+            if (!$user_id) send_error("User ID is required.");
+
+            $pdo = get_db_connection();
+            $stmt = $pdo->prepare("DELETE FROM users WHERE id = ?");
+            $stmt->execute([$user_id]);
+            $pdo->commit();
+            send_json(['success' => true, 'message' => 'User account removed.']);
+            break;
+
+        // =========================================================
+        // OPERATOR & ADMIN ACTIONS (File Upload, Generate PDF, Master Changes)
+        // =========================================================
         case 'upload_file':
-            if (empty($_FILES['file'])) {
-                send_error("No file uploaded.");
-            }
+            require_role(['ADMIN', 'OPERATOR']);
+            if (empty($_FILES['file'])) send_error("No file uploaded.");
             $report_date = $_POST['report_date'] ?? date('d/m/Y');
             $file = $_FILES['file'];
             $count = import_daily_payment_file($file['tmp_name'], $file['name'], $report_date);
@@ -165,6 +225,45 @@ try {
             ]);
             break;
 
+        case 'generate_pdfs':
+            require_role(['ADMIN', 'OPERATOR']);
+            $from_date = $_POST['from_date'] ?? '';
+            $to_date = $_POST['to_date'] ?? '';
+            $acct_month = $_POST['accounting_month'] ?? '';
+            $sec_num = isset($_POST['sectional_number']) ? (int)$_POST['sectional_number'] : null;
+
+            $res = generate_transfer_reports($from_date, $to_date, $acct_month, $sec_num);
+            send_json([
+                'success' => true,
+                'generated' => $res['generated'],
+                'skipped' => $res['skipped'],
+                'warnings' => $res['warnings'],
+                'next_sectional_number' => get_next_sectional_number()
+            ]);
+            break;
+
+        case 'add_master_record':
+        case 'update_master_record':
+        case 'delete_master_record':
+            require_role(['ADMIN', 'OPERATOR']);
+            $pwd = $_POST['password'] ?? '';
+            if ($action === 'add_master_record') {
+                $id = add_master_record($_POST, $pwd);
+                send_json(['success' => true, 'id' => $id]);
+            } elseif ($action === 'update_master_record') {
+                $id = $_POST['id'] ?? 0;
+                update_master_record($id, $_POST, $pwd);
+                send_json(['success' => true]);
+            } else {
+                $id = $_POST['id'] ?? 0;
+                delete_master_record($id, $pwd);
+                send_json(['success' => true]);
+            }
+            break;
+
+        // =========================================================
+        // READ-ONLY ACTIONS (Allowed for VIEWER, OPERATOR, ADMIN)
+        // =========================================================
         case 'get_recent_uploads':
             send_json(['success' => true, 'uploads' => get_recent_uploads()]);
             break;
@@ -183,22 +282,6 @@ try {
 
         case 'get_next_sectional_number':
             send_json(['success' => true, 'next_sectional_number' => get_next_sectional_number()]);
-            break;
-
-        case 'generate_pdfs':
-            $from_date = $_POST['from_date'] ?? '';
-            $to_date = $_POST['to_date'] ?? '';
-            $acct_month = $_POST['accounting_month'] ?? '';
-            $sec_num = isset($_POST['sectional_number']) ? (int)$_POST['sectional_number'] : null;
-
-            $res = generate_transfer_reports($from_date, $to_date, $acct_month, $sec_num);
-            send_json([
-                'success' => true,
-                'generated' => $res['generated'],
-                'skipped' => $res['skipped'],
-                'warnings' => $res['warnings'],
-                'next_sectional_number' => get_next_sectional_number()
-            ]);
             break;
 
         case 'get_pdf_list':
@@ -259,26 +342,6 @@ try {
         case 'get_master_records':
             $q = $_GET['search'] ?? null;
             send_json(['success' => true, 'records' => get_master_records($q)]);
-            break;
-
-        case 'add_master_record':
-            $pwd = $_POST['password'] ?? '';
-            $id = add_master_record($_POST, $pwd);
-            send_json(['success' => true, 'id' => $id]);
-            break;
-
-        case 'update_master_record':
-            $pwd = $_POST['password'] ?? '';
-            $id = $_POST['id'] ?? 0;
-            update_master_record($id, $_POST, $pwd);
-            send_json(['success' => true]);
-            break;
-
-        case 'delete_master_record':
-            $pwd = $_POST['password'] ?? '';
-            $id = $_POST['id'] ?? 0;
-            delete_master_record($id, $pwd);
-            send_json(['success' => true]);
             break;
 
         default:

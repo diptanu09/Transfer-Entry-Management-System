@@ -2,6 +2,8 @@
  * Main Web Application Logic for Transfer Entry Management System
  */
 
+let currentUserRole = 'VIEWER';
+
 document.addEventListener('DOMContentLoaded', () => {
   initAuth();
   initTabs();
@@ -67,15 +69,25 @@ async function checkAuthStatus() {
   const modal = document.getElementById('login-modal');
   const userArea = document.getElementById('user-info-area');
   const userName = document.getElementById('logged-user-name');
+  const usersTabNav = document.getElementById('nav-tab-users');
 
   try {
     const res = await fetch('api.php?action=check_auth');
     const data = await res.json();
 
     if (data.authenticated) {
+      currentUserRole = data.role || 'VIEWER';
+
       if (modal) modal.classList.remove('active');
       if (userArea) userArea.style.display = 'flex';
-      if (userName) userName.innerText = `User: ${data.full_name || data.user}`;
+      if (userName) userName.innerText = `User: ${data.full_name || data.user} (${currentUserRole})`;
+
+      // Show Admin User Management tab only if ADMIN
+      if (usersTabNav) {
+        usersTabNav.style.display = (currentUserRole === 'ADMIN') ? 'inline-block' : 'none';
+      }
+
+      applyRoleUiRestrictions();
     } else {
       if (modal) modal.classList.add('active');
       if (userArea) userArea.style.display = 'none';
@@ -83,6 +95,19 @@ async function checkAuthStatus() {
   } catch (err) {
     if (modal) modal.classList.add('active');
   }
+}
+
+function applyRoleUiRestrictions() {
+  // Viewer Role Restrictions: Disable upload & generate buttons
+  const isViewer = (currentUserRole === 'VIEWER');
+
+  const uploadBtn = document.querySelector('#upload-form button[type="submit"]');
+  const generateBtn = document.getElementById('btn-generate-pdfs');
+  const addMasterBtn = document.getElementById('btn-add-master');
+
+  if (uploadBtn) uploadBtn.disabled = isViewer;
+  if (generateBtn) generateBtn.disabled = isViewer;
+  if (addMasterBtn) addMasterBtn.style.display = isViewer ? 'none' : 'inline-block';
 }
 
 async function handleLogin(e) {
@@ -114,15 +139,7 @@ async function handleLogin(e) {
       return;
     }
 
-    const modal = document.getElementById('login-modal');
-    if (modal) modal.classList.remove('active');
-
-    const userArea = document.getElementById('user-info-area');
-    if (userArea) userArea.style.display = 'flex';
-
-    const userName = document.getElementById('logged-user-name');
-    if (userName) userName.innerText = `User: ${data.full_name || data.user}`;
-
+    await checkAuthStatus();
     loadRecentUploads();
   } catch (err) {
     if (errBox) {
@@ -138,6 +155,7 @@ async function handleRegister(e) {
   const fullNameInput = document.getElementById('reg-full-name');
   const emailInput = document.getElementById('reg-email');
   const pwdInput = document.getElementById('reg-password');
+  const roleInput = document.getElementById('reg-role');
   const errBox = document.getElementById('register-error-msg');
 
   if (errBox) errBox.style.display = 'none';
@@ -146,12 +164,14 @@ async function handleRegister(e) {
   const fullName = fullNameInput ? fullNameInput.value.trim() : '';
   const email = emailInput ? emailInput.value.trim() : '';
   const password = pwdInput ? pwdInput.value : '';
+  const requestedRole = roleInput ? roleInput.value : 'OPERATOR';
 
   const formData = new FormData();
   formData.append('username', username);
   formData.append('full_name', fullName);
   formData.append('email', email);
   formData.append('password', password);
+  formData.append('requested_role', requestedRole);
 
   try {
     const res = await fetch('api.php?action=register', { method: 'POST', body: formData });
@@ -165,16 +185,8 @@ async function handleRegister(e) {
       return;
     }
 
-    const modal = document.getElementById('login-modal');
-    if (modal) modal.classList.remove('active');
-
-    const userArea = document.getElementById('user-info-area');
-    if (userArea) userArea.style.display = 'flex';
-
-    const userName = document.getElementById('logged-user-name');
-    if (userName) userName.innerText = `User: ${data.full_name || data.user}`;
-
-    loadRecentUploads();
+    alert(data.message || "Registration submitted! Please wait for Admin approval.");
+    switchAuthTab('login');
   } catch (err) {
     if (errBox) {
       errBox.innerText = err.message || "Server communication error.";
@@ -189,6 +201,108 @@ async function handleLogout() {
     await checkAuthStatus();
   } catch (e) {
     location.reload();
+  }
+}
+
+// User Management (Admin Only)
+async function loadUsersList() {
+  const tableBody = document.getElementById('users-table-body');
+  if (!tableBody) return;
+
+  tableBody.innerHTML = `<tr><td colspan="7" align="center">Loading users...</td></tr>`;
+
+  try {
+    const res = await fetch('api.php?action=get_users_list');
+    const data = await res.json();
+
+    if (!data.success) {
+      tableBody.innerHTML = `<tr><td colspan="7" align="center">${data.error}</td></tr>`;
+      return;
+    }
+
+    tableBody.innerHTML = (data.users || []).map(u => {
+      const isApproved = (u.is_approved == 1);
+      const statusBadge = isApproved
+        ? `<span style="color: var(--success); font-weight:700;">APPROVED</span>`
+        : `<span style="color: var(--danger); font-weight:700;">PENDING</span>`;
+
+      return `
+        <tr>
+          <td>${u.id}</td>
+          <td><strong>${escapeHtml(u.username)}</strong></td>
+          <td>${escapeHtml(u.full_name || '-')}</td>
+          <td>${escapeHtml(u.email || '-')}</td>
+          <td>
+            <select onchange="updateUserRole(${u.id}, this.value)" class="form-control" style="padding: 2px 6px; font-size: 0.85rem;">
+              <option value="ADMIN" ${u.role === 'ADMIN' ? 'selected' : ''}>ADMIN</option>
+              <option value="OPERATOR" ${u.role === 'OPERATOR' ? 'selected' : ''}>OPERATOR</option>
+              <option value="VIEWER" ${u.role === 'VIEWER' ? 'selected' : ''}>VIEWER</option>
+            </select>
+          </td>
+          <td>${statusBadge}</td>
+          <td>
+            ${!isApproved ? `<button onclick="approveUser(${u.id}, '${u.role}')" class="btn btn-primary" style="padding: 4px 10px; font-size:0.8rem; margin-right:6px;">Approve</button>` : ''}
+            <button onclick="rejectUser(${u.id}, '${escapeHtml(u.username)}')" class="btn btn-secondary" style="padding: 4px 10px; font-size:0.8rem; background:#ef4444; color:#fff;">Remove</button>
+          </td>
+        </tr>
+      `;
+    }).join('') || `<tr><td colspan="7" align="center">No registered users found.</td></tr>`;
+  } catch (err) {
+    tableBody.innerHTML = `<tr><td colspan="7" align="center">Error loading user list.</td></tr>`;
+  }
+}
+
+async function approveUser(userId, role) {
+  const formData = new FormData();
+  formData.append('user_id', userId);
+  formData.append('role', role);
+
+  try {
+    const res = await fetch('api.php?action=approve_user', { method: 'POST', body: formData });
+    const data = await res.json();
+    if (data.success) {
+      loadUsersList();
+    } else {
+      alert(data.error || "Failed to approve user.");
+    }
+  } catch (err) {
+    alert("Error approving user.");
+  }
+}
+
+async function updateUserRole(userId, newRole) {
+  const formData = new FormData();
+  formData.append('user_id', userId);
+  formData.append('role', newRole);
+
+  try {
+    const res = await fetch('api.php?action=update_user_role', { method: 'POST', body: formData });
+    const data = await res.json();
+    if (!data.success) {
+      alert(data.error || "Failed to update role.");
+      loadUsersList();
+    }
+  } catch (err) {
+    alert("Error updating role.");
+  }
+}
+
+async function rejectUser(userId, username) {
+  if (!confirm(`Are you sure you want to remove user '${username}'?`)) return;
+
+  const formData = new FormData();
+  formData.append('user_id', userId);
+
+  try {
+    const res = await fetch('api.php?action=reject_user', { method: 'POST', body: formData });
+    const data = await res.json();
+    if (data.success) {
+      loadUsersList();
+    } else {
+      alert(data.error || "Failed to remove user.");
+    }
+  } catch (err) {
+    alert("Error removing user.");
   }
 }
 
@@ -212,6 +326,7 @@ function initTabs() {
       if (targetId === 'tab-generate') loadNextSectionalNumber();
       if (targetId === 'tab-view-pdf') loadPdfList();
       if (targetId === 'tab-master') loadMasterRecords();
+      if (targetId === 'tab-users') loadUsersList();
     });
   });
 }
@@ -223,7 +338,6 @@ function showAlertModal(title, message, isError = false) {
   const bodyEl = document.getElementById('alert-modal-body');
 
   if (titleEl) titleEl.innerText = title;
-
   if (bodyEl) {
     if (isError) {
       bodyEl.innerHTML = `<div class="alert-error-box">${escapeHtml(message)}</div>`;
@@ -231,7 +345,6 @@ function showAlertModal(title, message, isError = false) {
       bodyEl.innerText = message;
     }
   }
-
   if (modal) modal.classList.add('active');
 }
 
@@ -254,7 +367,7 @@ function formatMoney(num) {
   }).format(num || 0);
 }
 
-// 1. Upload Page Logic
+// Upload Page Logic
 function initUploadPage() {
   const form = document.getElementById('upload-form');
   if (!form) return;
@@ -323,7 +436,7 @@ async function loadRecentUploads() {
   }
 }
 
-// 2. View Data Page Logic
+// View Data Page Logic
 function initViewDataPage() {
   const btn = document.getElementById('btn-filter-view-data');
   if (btn) btn.addEventListener('click', loadViewData);
@@ -374,7 +487,7 @@ async function loadViewData() {
   }
 }
 
-// 3. Generate PDF Page Logic
+// Generate PDF Page Logic
 function initGeneratePdfPage() {
   loadNextSectionalNumber();
   const btn = document.getElementById('btn-generate-pdfs');
@@ -435,7 +548,7 @@ async function generatePdfs() {
   }
 }
 
-// 4. View PDF Page Logic
+// View PDF Page Logic
 function initViewPdfPage() {
   const btn = document.getElementById('btn-filter-pdf');
   if (btn) btn.addEventListener('click', loadPdfList);
@@ -471,7 +584,7 @@ async function loadPdfList() {
   } catch (e) { }
 }
 
-// 5. Summary Page Logic
+// Summary Page Logic
 function initSummaryPage() {
   const btnLoad = document.getElementById('btn-load-summary');
   const btnExcel = document.getElementById('btn-excel-summary');
@@ -562,7 +675,7 @@ function exportSummaryExcel() {
   window.location.href = `api.php?action=export_summary_excel&filter_type=${mode}&from_date=${encodeURIComponent(from)}&to_date=${encodeURIComponent(to)}&accounting_month=${encodeURIComponent(month)}&financial_year_val=${encodeURIComponent(fy)}`;
 }
 
-// 6. Detailed Page Logic
+// Detailed Page Logic
 function initDetailedPage() {
   const btnLoad = document.getElementById('btn-load-detailed');
   const btnExcel = document.getElementById('btn-excel-detailed');
@@ -657,7 +770,7 @@ function exportDetailedExcel() {
   window.location.href = `api.php?action=export_detailed_excel&filter_type=${mode}&from_date=${encodeURIComponent(from)}&to_date=${encodeURIComponent(to)}&accounting_month=${encodeURIComponent(month)}&financial_year_val=${encodeURIComponent(fy)}`;
 }
 
-// 7. Master Management Page Logic
+// Master Management Page Logic
 function initMasterPage() {
   const searchBtn = document.getElementById('btn-search-master');
   const addBtn = document.getElementById('btn-add-master');
@@ -700,7 +813,7 @@ async function loadMasterRecords() {
           <td align="center">${r.sub_head !== null ? r.sub_head : '-'}</td>
           <td align="center">${r.detail_head !== null ? r.detail_head : '-'}</td>
           <td align="center">
-            <button onclick="editMasterRecord(${r.id})" class="btn btn-secondary" style="padding: 4px 8px; font-size: 0.75rem;">Edit</button>
+            ${currentUserRole !== 'VIEWER' ? `<button onclick="editMasterRecord(${r.id})" class="btn btn-secondary" style="padding: 4px 8px; font-size: 0.75rem;">Edit</button>` : '-'}
           </td>
         </tr>
       `).join('') || `<tr><td colspan="9" align="center">No scheme master records found.</td></tr>`;
@@ -795,30 +908,6 @@ async function saveMasterRecord() {
     closeMasterModal();
     loadMasterRecords();
     alert("Master record saved successfully!");
-  } catch (err) {
-    showAlertModal("Error", err.message, true);
-  }
-}
-
-async function deleteMasterRecord(id, trCode) {
-  const pwd = prompt(`Enter password '12345' to confirm deletion of '${trCode}':`);
-  if (pwd === null) return;
-
-  const formData = new FormData();
-  formData.append('id', id);
-  formData.append('password', pwd);
-
-  try {
-    const res = await fetch('api.php?action=delete_master_record', { method: 'POST', body: formData });
-    const data = await res.json();
-
-    if (!data.success) {
-      showAlertModal("Delete Failed", data.error, true);
-      return;
-    }
-
-    loadMasterRecords();
-    alert("Master record deleted successfully.");
   } catch (err) {
     showAlertModal("Error", err.message, true);
   }
