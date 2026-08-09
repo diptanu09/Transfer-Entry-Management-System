@@ -19,7 +19,7 @@ if (!defined('OCI_FETCHSTATEMENT_BY_ROW')) define('OCI_FETCHSTATEMENT_BY_ROW', 3
 if (!defined('OCI_RETURN_NULLS')) define('OCI_RETURN_NULLS', 4);
 if (!defined('OCI_RETURN_LOBS')) define('OCI_RETURN_LOBS', 8);
 
-// Conditional stubs to eliminate VS Code / PHP Linter (PHP0417) unknown function warnings
+// Conditional stubs to eliminate VS Code / PHP Linter unknown function warnings
 if (!function_exists('oci_connect')) {
     function oci_connect($username, $password, $connection_string, $encoding = '') { return false; }
     function oci_error($resource = null) { return ['message' => 'OCI8 extension not loaded']; }
@@ -29,6 +29,7 @@ if (!function_exists('oci_connect')) {
     function oci_bind_by_name($statement, $bv_name, &$variable, $maxlength = -1, $type = 0) { return false; }
     function oci_execute($statement, $mode = 0) { return false; }
     function oci_fetch_all($statement, &$output, $skip = 0, $maxrows = -1, $flags = 0) { return 0; }
+    /** @return array|false */
     function oci_fetch_array($statement, $mode = 0) { return false; }
 }
 
@@ -202,7 +203,7 @@ class Oci8StatementWrapper {
      */
     public function fetch() {
         $row = oci_fetch_array($this->stmt, OCI_ASSOC + OCI_RETURN_NULLS + OCI_RETURN_LOBS);
-        if (!$row) return false;
+        if (!is_array($row)) return false;
 
         $lower_row = [];
         foreach ($row as $k => $v) {
@@ -219,7 +220,7 @@ class Oci8StatementWrapper {
      */
     public function fetchColumn() {
         $row = oci_fetch_array($this->stmt, OCI_NUM);
-        return $row ? $row[0] : false;
+        return (is_array($row) && isset($row[0])) ? $row[0] : false;
     }
 }
 
