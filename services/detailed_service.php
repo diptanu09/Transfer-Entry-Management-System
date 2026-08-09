@@ -6,7 +6,16 @@
 require_once __DIR__ . '/../db.php';
 require_once __DIR__ . '/../helpers.php';
 
-function get_transfer_entry_report_data($filter_type, $from_date = null, $to_date = null, $accounting_month = null, $financial_year_val = null) {
+/**
+ * @param string $filter_type
+ * @param string|null $from_date
+ * @param string|null $to_date
+ * @param string|null $accounting_month
+ * @param string|null $financial_year_val
+ * @return array
+ * @throws Exception
+ */
+function get_transfer_entry_report_data(string $filter_type, ?string $from_date = null, ?string $to_date = null, ?string $accounting_month = null, ?string $financial_year_val = null): array {
     $pdo = initialize_database();
     $where = [];
     $params = [];
@@ -101,7 +110,12 @@ function get_transfer_entry_report_data($filter_type, $from_date = null, $to_dat
     return [$records, $filter_desc];
 }
 
-function export_detailed_excel($records, $filter_desc) {
+/**
+ * @param array $records
+ * @param string $filter_desc
+ * @return void
+ */
+function export_detailed_excel(array $records, string $filter_desc): void {
     header("Content-Type: application/vnd.ms-excel; charset=utf-8");
     header("Content-Disposition: attachment; filename=\"Transfer_Entry_Report_" . date('Ymd') . ".xls\"");
     header("Pragma: no-cache");
