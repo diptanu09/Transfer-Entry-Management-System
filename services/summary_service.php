@@ -49,12 +49,12 @@ function get_summary_report_data($filter_type, $from_date = null, $to_date = nul
 
     $stmt = $pdo->prepare("
         WITH ranked_master AS (
-            SELECT *,
+            SELECT tr_code, controller, css, tr_desc, central_share, state_share, sub_head, detail_head,
                    ROW_NUMBER() OVER (
                        PARTITION BY tr_code
                        ORDER BY
                             CASE WHEN controller IS NOT NULL OR css IS NOT NULL THEN 0 ELSE 1 END,
-                            source_row_number
+                            id
                    ) AS row_rank
             FROM scheme_configuration_master
         )

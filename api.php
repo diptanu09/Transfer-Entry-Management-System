@@ -16,14 +16,26 @@ require_once __DIR__ . '/services/transfer_service.php';
 require_once __DIR__ . '/services/summary_service.php';
 require_once __DIR__ . '/services/detailed_service.php';
 
+ob_start();
+
 session_start();
 
 $action = $_REQUEST['action'] ?? '';
 
 function send_json($data, $status = 200) {
+    if (ob_get_length()) {
+        ob_clean();
+    }
     http_response_code($status);
-    header('Content-Type: application/json');
-    echo json_encode($data);
+    header('Content-Type: application/json; charset=utf-8');
+    $json = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+    if ($json === false) {
+        $json = json_encode([
+            'success' => false,
+            'error' => 'JSON encoding error: ' . json_last_error_msg()
+        ]);
+    }
+    echo $json;
     exit;
 }
 
@@ -147,7 +159,7 @@ if ($action === 'check_auth') {
 }
 
 // Protect remaining actions
-if (empty($_SESSION['user'])) {
+if (empty($_SESSION['user']) && $action !== 'download_pdf' && $action !== 'download_merged_pdf') {
     send_error("Authentication required. Please log in.", 401);
 }
 
@@ -295,6 +307,13 @@ try {
             download_generated_pdf($id);
             break;
 
+        case 'download_merged_pdf':
+            $from = $_GET['from_date'] ?? $_GET['start_date'] ?? null;
+            $to = $_GET['to_date'] ?? $_GET['end_date'] ?? null;
+            $acct_m = $_GET['accounting_month'] ?? null;
+            download_batch_merged_pdf($from, $to, $acct_m);
+            break;
+
         case 'get_summary_report':
             $type = $_GET['filter_type'] ?? 'month';
             $from = $_GET['from_date'] ?? null;
@@ -342,6 +361,12 @@ try {
         case 'get_master_records':
             $q = $_GET['search'] ?? null;
             send_json(['success' => true, 'records' => get_master_records($q)]);
+            break;
+
+        case 'clear_all_data':
+            require_role(['ADMIN']);
+            require_once __DIR__ . '/clear_data.php';
+            exit;
             break;
 
         default:

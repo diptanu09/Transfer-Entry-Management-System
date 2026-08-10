@@ -152,7 +152,10 @@ $current_month = date('m/Y');
           </div>
         </div>
 
-        <button id="btn-generate-pdfs" class="btn btn-primary" style="margin-top: 10px;">Generate PDFs</button>
+        <div style="display: flex; gap: 10px; margin-top: 10px; align-items: center; flex-wrap: wrap;">
+          <button id="btn-generate-pdfs" class="btn btn-primary">Generate PDFs</button>
+          <a id="btn-download-merged-gen" href="#" target="_blank" class="btn btn-success" style="display: none; text-decoration: none;">📥 Open Single Merged PDF (Vouchers + Summary Annexure)</a>
+        </div>
 
         <div id="gen-status" style="margin-top: 16px; font-weight: 600; color: var(--primary);"></div>
       </div>
@@ -161,8 +164,8 @@ $current_month = date('m/Y');
     <!-- Tab 4: View PDFs -->
     <div id="tab-view-pdf" class="tab-content">
       <div class="card">
-        <h2 class="card-title">View Generated PDFs</h2>
-        <p class="card-subtitle">View, preview, and download previously generated Transfer Entry PDF reports.</p>
+        <h2 class="card-title">View & Download PDFs</h2>
+        <p class="card-subtitle">View individual TE vouchers or download a single merged PDF containing all TE vouchers with Summary Report in the last page.</p>
 
         <div class="form-grid">
           <div class="form-group">
@@ -173,8 +176,9 @@ $current_month = date('m/Y');
             <label>To Date</label>
             <input type="text" id="pdf-end-date" class="form-control" value="">
           </div>
-          <div class="form-group" style="justify-content: flex-end;">
+          <div class="form-group" style="justify-content: flex-end; gap: 10px; display: flex; align-items: flex-end;">
             <button id="btn-filter-pdf" class="btn btn-primary">Filter Reports</button>
+            <button id="btn-download-merged-view" class="btn btn-success">📥 Download Single Merged PDF</button>
           </div>
         </div>
 
@@ -230,9 +234,10 @@ $current_month = date('m/Y');
           </div>
         </div>
 
-        <div style="display: flex; gap: 10px; margin-top: 10px;">
+        <div style="display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap;">
           <button id="btn-load-summary" class="btn btn-primary">Load Report</button>
           <button id="btn-excel-summary" class="btn btn-secondary">Export Excel (.xls)</button>
+          <button id="btn-pdf-summary" class="btn btn-success">📥 Download Single Merged PDF Report</button>
         </div>
 
         <div id="summary-status" style="margin-top: 14px; font-weight: 600; color: var(--primary);"></div>

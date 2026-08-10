@@ -24,26 +24,27 @@ function verify_password(string $password): bool {
 function get_scheme_master_map(): array {
     $pdo = initialize_database();
     $stmt = $pdo->query("
-        WITH ranked_master AS (
-            SELECT tr_code, sub_head, detail_head, controller, css, tr_desc, central_share, state_share,
-                   ROW_NUMBER() OVER (
-                       PARTITION BY tr_code
-                       ORDER BY
-                            CASE WHEN controller IS NOT NULL OR css IS NOT NULL THEN 0 ELSE 1 END,
-                            source_row_number
-                   ) AS row_rank
-            FROM scheme_configuration_master
-        )
         SELECT tr_code, sub_head, detail_head, controller, css, tr_desc, central_share, state_share
-        FROM ranked_master
-        WHERE row_rank = 1
+        FROM scheme_configuration_master
     ");
 
     $rows = $stmt->fetchAll();
     $map = [];
     foreach ($rows as $m) {
-        if (!empty($m['tr_code']) && $m['sub_head'] !== null && $m['detail_head'] !== null) {
-            $map[strtoupper(trim($m['tr_code']))] = $m;
+        if (!empty($m['tr_code'])) {
+            $raw_tr = trim($m['tr_code']);
+            $map[strtoupper($raw_tr)] = $m;
+
+            $extracted = extract_tr_code($raw_tr);
+            if ($extracted) {
+                $map[$extracted] = $m;
+                $map[display_tr_code($extracted)] = $m;
+            }
+
+            $clean = strtoupper(preg_replace('/[\s\-_.]/', '', $raw_tr));
+            if ($clean !== '') {
+                $map[$clean] = $m;
+            }
         }
     }
     return $map;

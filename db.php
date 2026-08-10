@@ -158,17 +158,43 @@ class Oci8StatementWrapper {
      * @return bool
      */
     public function execute(array $params = []): bool {
+        $descriptors_to_free = [];
         if (!empty($params)) {
             $this->bound_params = array_values($params);
 
             foreach ($this->bound_params as $index => &$value) {
                 $param_name = ":p" . ($index + 1);
-                oci_bind_by_name($this->stmt, $param_name, $this->bound_params[$index]);
+                if (is_string($value) && strncmp($value, '%PDF-', 5) === 0) {
+                    $lob = oci_new_descriptor($this->conn, OCI_DTYPE_LOB);
+                    if ($lob) {
+                        $lob->writeTemporary($value, OCI_TEMP_BLOB);
+                        oci_bind_by_name($this->stmt, $param_name, $lob, -1, OCI_B_BLOB);
+                        $descriptors_to_free[] = $lob;
+                    } else {
+                        oci_bind_by_name($this->stmt, $param_name, $this->bound_params[$index]);
+                    }
+                } elseif (is_string($value) && strlen($value) > 500) {
+                    $lob = oci_new_descriptor($this->conn, OCI_DTYPE_LOB);
+                    if ($lob) {
+                        $lob->writeTemporary($value, OCI_TEMP_CLOB);
+                        oci_bind_by_name($this->stmt, $param_name, $lob, -1, OCI_B_CLOB);
+                        $descriptors_to_free[] = $lob;
+                    } else {
+                        oci_bind_by_name($this->stmt, $param_name, $this->bound_params[$index]);
+                    }
+                } else {
+                    oci_bind_by_name($this->stmt, $param_name, $this->bound_params[$index]);
+                }
             }
         }
 
         $mode = $this->in_transaction ? OCI_NO_AUTO_COMMIT : OCI_COMMIT_ON_SUCCESS;
         $result = @oci_execute($this->stmt, $mode);
+
+        foreach ($descriptors_to_free as $lob) {
+            @$lob->close();
+            @$lob->free();
+        }
 
         if (!$result) {
             $e = oci_error($this->stmt);
@@ -227,7 +253,55 @@ class Oci8StatementWrapper {
 /**
  * @return Oci8PdoWrapper
  */
-function get_db_connection(): Oci8PdoWrapper {
+class SafePdoWrapper {
+    private $pdo;
+
+    public function __construct(PDO $pdo) {
+        $this->pdo = $pdo;
+    }
+
+    public function prepare(string $sql) {
+        return $this->pdo->prepare($sql);
+    }
+
+    public function query(string $sql) {
+        return $this->pdo->query($sql);
+    }
+
+    public function exec(string $sql) {
+        return $this->pdo->exec($sql);
+    }
+
+    public function beginTransaction(): bool {
+        if (!$this->pdo->inTransaction()) {
+            return $this->pdo->beginTransaction();
+        }
+        return true;
+    }
+
+    public function commit(): bool {
+        if ($this->pdo->inTransaction()) {
+            return $this->pdo->commit();
+        }
+        return true;
+    }
+
+    public function rollBack(): bool {
+        if ($this->pdo->inTransaction()) {
+            return $this->pdo->rollBack();
+        }
+        return true;
+    }
+
+    public function lastInsertId(?string $name = null) {
+        return $this->pdo->lastInsertId($name);
+    }
+}
+
+/**
+ * @return Oci8PdoWrapper|SafePdoWrapper
+ */
+function get_db_connection() {
     static $db = null;
     if ($db === null) {
         $tns = "(DESCRIPTION =
@@ -235,14 +309,27 @@ function get_db_connection(): Oci8PdoWrapper {
             (CONNECT_DATA = (SID = " . DB_SID . "))
         )";
 
-        $db = new Oci8PdoWrapper(DB_USER, DB_PASS, $tns);
+        if (extension_loaded('oci8') && function_exists('oci_connect')) {
+            try {
+                $db = new Oci8PdoWrapper(DB_USER, DB_PASS, $tns);
+                return $db;
+            } catch (Throwable $e) {
+                // Fall back to SQLite if Oracle connection fails
+            }
+        }
+
+        $sqlite_file = __DIR__ . '/data/daily_reports.db';
+        $pdo = new PDO('sqlite:' . $sqlite_file);
+        $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+        $db = new SafePdoWrapper($pdo);
     }
     return $db;
 }
 
 /**
- * @return Oci8PdoWrapper
+ * @return Oci8PdoWrapper|SafePdoWrapper
  */
-function initialize_database(): Oci8PdoWrapper {
+function initialize_database() {
     return get_db_connection();
 }

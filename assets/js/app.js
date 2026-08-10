@@ -541,7 +541,14 @@ async function generatePdfs() {
 
     if (statusLabel) statusLabel.innerText = `Generated ${data.generated} PDF report(s) successfully!`;
     loadNextSectionalNumber();
-    alert(`Generated ${data.generated} PDF report(s) successfully!`);
+
+    const btnMergedGen = document.getElementById('btn-download-merged-gen');
+    if (btnMergedGen) {
+      btnMergedGen.href = `api.php?action=download_merged_pdf&from_date=${encodeURIComponent(fromDate)}&to_date=${encodeURIComponent(toDate)}&accounting_month=${encodeURIComponent(acctMonth)}`;
+      btnMergedGen.style.display = 'inline-block';
+    }
+
+    alert(`Generated ${data.generated} PDF report(s) successfully!\nClick 'Open Single Merged PDF' to view all vouchers with Summary Annexure.`);
   } catch (err) {
     if (statusLabel) statusLabel.innerText = "PDF generation failed.";
     showAlertModal("Error", err.message || "An unknown error occurred.", true);
@@ -552,6 +559,17 @@ async function generatePdfs() {
 function initViewPdfPage() {
   const btn = document.getElementById('btn-filter-pdf');
   if (btn) btn.addEventListener('click', loadPdfList);
+
+  const btnMergedView = document.getElementById('btn-download-merged-view');
+  if (btnMergedView) {
+    btnMergedView.addEventListener('click', () => {
+      const startDateInput = document.getElementById('pdf-start-date');
+      const endDateInput = document.getElementById('pdf-end-date');
+      const startDate = startDateInput ? startDateInput.value : '';
+      const endDate = endDateInput ? endDateInput.value : '';
+      window.open(`api.php?action=download_merged_pdf&start_date=${encodeURIComponent(startDate)}&end_date=${encodeURIComponent(endDate)}`, '_blank');
+    });
+  }
 }
 
 async function loadPdfList() {
@@ -577,7 +595,7 @@ async function loadPdfList() {
           <td align="right">Rs. ${formatMoney(r.amount)}</td>
           <td>${escapeHtml(r.accounting_month)}</td>
           <td>${escapeHtml(r.generation_date)}</td>
-          <td><a href="api.php?action=download_pdf&id=${r.id}" target="_blank" class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.8rem;">Open PDF</a></td>
+          <td><a href="api.php?action=download_pdf&id=${r.id}&file=${encodeURIComponent(r.pdf_file_name || 'report.pdf')}" target="_blank" class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.8rem;">Open PDF</a></td>
         </tr>
       `).join('') || `<tr><td colspan="7" align="center">No generated PDFs found.</td></tr>`;
     }
@@ -588,9 +606,18 @@ async function loadPdfList() {
 function initSummaryPage() {
   const btnLoad = document.getElementById('btn-load-summary');
   const btnExcel = document.getElementById('btn-excel-summary');
+  const btnPdf = document.getElementById('btn-pdf-summary');
 
   if (btnLoad) btnLoad.addEventListener('click', loadSummaryReport);
   if (btnExcel) btnExcel.addEventListener('click', exportSummaryExcel);
+  if (btnPdf) {
+    btnPdf.addEventListener('click', () => {
+      const from = document.getElementById('sum-from-date') ? document.getElementById('sum-from-date').value : '';
+      const to = document.getElementById('sum-to-date') ? document.getElementById('sum-to-date').value : '';
+      const acctMonth = document.getElementById('sum-acct-month') ? document.getElementById('sum-acct-month').value : '';
+      window.open(`api.php?action=download_merged_pdf&from_date=${encodeURIComponent(from)}&to_date=${encodeURIComponent(to)}&accounting_month=${encodeURIComponent(acctMonth)}`, '_blank');
+    });
+  }
 }
 
 async function loadSummaryReport() {

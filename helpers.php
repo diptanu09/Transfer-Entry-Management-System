@@ -44,13 +44,29 @@ function format_date($value) {
 
 function to_db_date($value) {
     if (empty($value)) return null;
-    $text = trim($value);
-    if (preg_match('/^(\d{2})\/(\d{2})\/(\d{4})$/', $text, $m)) {
-        return "{$m[3]}-{$m[2]}-{$m[1]}";
+    $text = trim((string)$value);
+    
+    // DD/MM/YYYY or DD-MM-YYYY or DD.MM.YYYY
+    if (preg_match('/^(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{4})$/', $text, $m)) {
+        return sprintf('%04d-%02d-%02d', (int)$m[3], (int)$m[2], (int)$m[1]);
     }
-    if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $text)) {
-        return $text;
+    // YYYY-MM-DD
+    if (preg_match('/^(\d{4})[\/\.-](\d{1,2})[\/\.-](\d{1,2})$/', $text, $m)) {
+        return sprintf('%04d-%02d-%02d', (int)$m[1], (int)$m[2], (int)$m[3]);
     }
+    // Excel Serial Number (e.g. 45150)
+    if (is_numeric($text) && (float)$text > 30000 && (float)$text < 80000) {
+        $days = (int)floor((float)$text);
+        $dt = new DateTime('1899-12-30');
+        $dt->modify("+{$days} days");
+        return $dt->format('Y-m-d');
+    }
+    // Textual dates like 10-Aug-2026 or 10-Aug-26
+    $ts = strtotime($text);
+    if ($ts !== false && $ts > 0) {
+        return date('Y-m-d', $ts);
+    }
+
     return null;
 }
 
@@ -80,10 +96,28 @@ function indian_number($value) {
 
 function display_tr_code($code) {
     $code = trim($code ?? '');
-    if (preg_match('/^TR(\d+)$/i', $code, $m)) {
-        return "TR-" . $m[1];
+    if (preg_match('/^TR[\s\-_.]*(\d+)$/i', $code, $m)) {
+        return sprintf("TR-%02d", (int)$m[1]);
     }
     return $code;
+}
+
+function extract_tr_code(?string $text): ?string {
+    if ($text === null) return null;
+    $text = trim($text);
+    if ($text === '') return null;
+
+    if (preg_match('/TR[\s\-_.]*(\d+)/i', $text, $matches)) {
+        $num = (int)$matches[1];
+        return sprintf('TR%02d', $num);
+    }
+
+    if (preg_match('/^0*(\d{1,2})$/', $text, $matches)) {
+        $num = (int)$matches[1];
+        return sprintf('TR%02d', $num);
+    }
+
+    return null;
 }
 
 function controller_to_ministry($controller) {
@@ -92,10 +126,8 @@ function controller_to_ministry($controller) {
     }
     $parts = explode(" - ", $controller, 2);
     $raw_name = trim(end($parts));
-    if (preg_match('/^ministry\s+of\b/i', $raw_name)) {
-        return $raw_name;
-    }
-    return "Ministry of " . $raw_name;
+    $clean_name = preg_replace('/^ministry\s+of\s+/i', '', $raw_name);
+    return "Ministry of " . strtoupper($clean_name);
 }
 
 function format_head_code($val) {

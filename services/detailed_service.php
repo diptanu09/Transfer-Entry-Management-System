@@ -57,12 +57,12 @@ function get_transfer_entry_report_data(string $filter_type, ?string $from_date 
 
     $stmt = $pdo->prepare("
         WITH ranked_master AS (
-            SELECT *,
+            SELECT tr_code, controller, css, tr_desc, sub_head, detail_head,
                    ROW_NUMBER() OVER (
                        PARTITION BY tr_code
                        ORDER BY
                             CASE WHEN controller IS NOT NULL OR css IS NOT NULL THEN 0 ELSE 1 END,
-                            source_row_number
+                            id
                    ) AS row_rank
             FROM scheme_configuration_master
         )
