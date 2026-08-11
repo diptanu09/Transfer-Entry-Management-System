@@ -11,15 +11,15 @@ $current_month = date('m/Y');
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>CSS Scheme Transfer Entry Application</title>
-  <link rel="stylesheet" href="assets/css/style.css">
+  <title>CSS (SNA SPARSH) Transfer Entry Application</title>
+  <link rel="stylesheet" href="assets/css/style.css?v=<?= filemtime(__DIR__ . '/assets/css/style.css') ?>">
 </head>
 <body>
 
   <!-- Top Header -->
   <header class="header">
     <div>
-      <h1>CSS Scheme Transfer Entry Management System</h1>
+      <h1>CSS (SNA SPARSH) Transfer Entry Management System</h1>
       <p>Windows & Web Transfer Entry Daily Payments, Scheme Master & Analytical Report Suite</p>
     </div>
     <div id="user-info-area" style="display: flex; align-items: center; gap: 12px;">
@@ -327,7 +327,7 @@ $current_month = date('m/Y');
     <div id="tab-master" class="tab-content">
       <div class="card">
         <h2 class="card-title">Scheme Configuration Master Data</h2>
-        <p class="card-subtitle">Manage CSS scheme mapping entries. Password '12345' is required to save records.</p>
+        <p class="card-subtitle">Manage CSS scheme mapping entries. Edits permitted for Admin users only.</p>
 
         <div style="display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap;">
           <input type="text" id="search-master-input" class="form-control" placeholder="Search TR code, ministry..." style="max-width: 320px;">
@@ -444,10 +444,6 @@ $current_month = date('m/Y');
             <input type="number" id="master-detail" class="form-control">
           </div>
         </div>
-        <div class="form-group" style="margin-top: 14px;">
-          <label style="color: var(--danger);">Enter Password '12345' to Save:</label>
-          <input type="password" id="master-password" class="form-control" placeholder="Password (12345)" required>
-        </div>
       </div>
       <div class="modal-footer">
         <button onclick="closeMasterModal()" class="btn btn-secondary">Cancel</button>
@@ -506,6 +502,6 @@ $current_month = date('m/Y');
     </div>
   </div>
 
-  <script src="assets/js/app.js"></script>
+  <script src="assets/js/app.js?v=<?= filemtime(__DIR__ . '/assets/js/app.js') ?>"></script>
 </body>
 </html>

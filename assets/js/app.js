@@ -100,6 +100,7 @@ async function checkAuthStatus() {
 function applyRoleUiRestrictions() {
   // Viewer Role Restrictions: Disable upload & generate buttons
   const isViewer = (currentUserRole === 'VIEWER');
+  const isAdmin = (currentUserRole === 'ADMIN');
 
   const uploadBtn = document.querySelector('#upload-form button[type="submit"]');
   const generateBtn = document.getElementById('btn-generate-pdfs');
@@ -107,7 +108,9 @@ function applyRoleUiRestrictions() {
 
   if (uploadBtn) uploadBtn.disabled = isViewer;
   if (generateBtn) generateBtn.disabled = isViewer;
-  if (addMasterBtn) addMasterBtn.style.display = isViewer ? 'none' : 'inline-block';
+  if (addMasterBtn) addMasterBtn.style.display = isAdmin ? 'inline-block' : 'none';
+
+  loadMasterRecords();
 }
 
 async function handleLogin(e) {
@@ -825,8 +828,14 @@ async function loadMasterRecords() {
 
     if (data.success) {
       masterRecords = data.records || [];
+      masterRecords.sort((a, b) => (a.tr_code || '').localeCompare((b.tr_code || ''), undefined, { numeric: true, sensitivity: 'base' }));
+
       if (status) {
-        status.innerText = `Showing ${masterRecords.length} Scheme Configuration Master record(s). Password '12345' is required to save changes.`;
+        if (currentUserRole === 'ADMIN') {
+          status.innerText = `Showing ${masterRecords.length} Scheme Configuration Master record(s).`;
+        } else {
+          status.innerText = `Showing ${masterRecords.length} Scheme Configuration Master record(s). (Read-only mode for ${currentUserRole}s)`;
+        }
       }
 
       body.innerHTML = masterRecords.map(r => `
@@ -840,7 +849,7 @@ async function loadMasterRecords() {
           <td align="center">${r.sub_head !== null ? r.sub_head : '-'}</td>
           <td align="center">${r.detail_head !== null ? r.detail_head : '-'}</td>
           <td align="center">
-            ${currentUserRole !== 'VIEWER' ? `<button onclick="editMasterRecord(${r.id})" class="btn btn-secondary" style="padding: 4px 8px; font-size: 0.75rem;">Edit</button>` : '-'}
+            ${currentUserRole === 'ADMIN' ? `<button onclick="editMasterRecord(${r.id})" class="btn btn-secondary" style="padding: 4px 8px; font-size: 0.75rem;">Edit</button>` : '-'}
           </td>
         </tr>
       `).join('') || `<tr><td colspan="9" align="center">No scheme master records found.</td></tr>`;
@@ -865,7 +874,6 @@ function openMasterModal(record) {
   const elState = document.getElementById('master-state');
   const elSub = document.getElementById('master-sub');
   const elDetail = document.getElementById('master-detail');
-  const elPwd = document.getElementById('master-password');
 
   if (elId) elId.value = record ? record.id : '';
   if (elTrCode) elTrCode.value = record ? record.tr_code : '';
@@ -876,7 +884,6 @@ function openMasterModal(record) {
   if (elState) elState.value = record ? record.state_share : '0';
   if (elSub) elSub.value = record ? record.sub_head : '';
   if (elDetail) elDetail.value = record ? record.detail_head : '';
-  if (elPwd) elPwd.value = '';
 
   if (modal) modal.classList.add('active');
 }
@@ -887,31 +894,43 @@ function closeMasterModal() {
 }
 
 function editMasterRecord(id) {
-  const rec = masterRecords.find(r => r.id === id);
+  const rec = masterRecords.find(r => String(r.id) === String(id));
   if (rec) openMasterModal(rec);
+}
+
+async function deleteMasterRecord(id) {
+  const rec = masterRecords.find(r => String(r.id) === String(id));
+  const label = rec ? (rec.tr_code || ('ID ' + id)) : ('ID ' + id);
+  if (!confirm(`Are you sure you want to delete Scheme Master record '${label}'?`)) return;
+  const formData = new FormData();
+  formData.append('id', id);
+  try {
+    const res = await fetch('api.php?action=delete_master_record', { method: 'POST', body: formData });
+    const data = await res.json();
+    if (!data.success) {
+      showAlertModal("Delete Failed", data.error, true);
+      return;
+    }
+    loadMasterRecords();
+  } catch (err) {
+    showAlertModal("Error", err.message, true);
+  }
 }
 
 async function saveMasterRecord() {
   const elId = document.getElementById('master-id');
-  const elPwd = document.getElementById('master-password');
   const elTrCode = document.getElementById('master-tr-code');
 
   const id = elId ? elId.value : '';
-  const pwd = elPwd ? elPwd.value : '';
   const trCode = elTrCode ? elTrCode.value : '';
 
   if (!trCode.trim()) {
     alert("TR Code is required.");
     return;
   }
-  if (!pwd) {
-    alert("Password '12345' is required to save changes.");
-    return;
-  }
 
   const formData = new FormData();
   formData.append('id', id);
-  formData.append('password', pwd);
   formData.append('tr_code', trCode);
   formData.append('tr_desc', document.getElementById('master-tr-desc') ? document.getElementById('master-tr-desc').value : '');
   formData.append('controller', document.getElementById('master-controller') ? document.getElementById('master-controller').value : '');
@@ -939,3 +958,10 @@ async function saveMasterRecord() {
     showAlertModal("Error", err.message, true);
   }
 }
+
+// Global Exports
+window.editMasterRecord = editMasterRecord;
+window.deleteMasterRecord = deleteMasterRecord;
+window.openMasterModal = openMasterModal;
+window.closeMasterModal = closeMasterModal;
+window.saveMasterRecord = saveMasterRecord;

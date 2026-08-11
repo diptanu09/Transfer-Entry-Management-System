@@ -257,21 +257,21 @@ try {
         case 'add_master_record':
         case 'update_master_record':
         case 'delete_master_record':
-            require_role(['ADMIN', 'OPERATOR']);
-            $pwd = $_POST['password'] ?? '';
+            require_role(['ADMIN']);
             if ($action === 'add_master_record') {
-                $id = add_master_record($_POST, $pwd);
+                $id = add_master_record($_POST);
                 send_json(['success' => true, 'id' => $id]);
             } elseif ($action === 'update_master_record') {
                 $id = $_POST['id'] ?? 0;
-                update_master_record($id, $_POST, $pwd);
+                update_master_record($id, $_POST);
                 send_json(['success' => true]);
             } else {
                 $id = $_POST['id'] ?? 0;
-                delete_master_record($id, $pwd);
+                delete_master_record($id);
                 send_json(['success' => true]);
             }
             break;
+
 
         // =========================================================
         // READ-ONLY ACTIONS (Allowed for VIEWER, OPERATOR, ADMIN)

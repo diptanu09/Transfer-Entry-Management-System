@@ -6,16 +6,6 @@
 require_once __DIR__ . '/../db.php';
 require_once __DIR__ . '/../helpers.php';
 
-const MASTER_PASSWORD = "12345";
-
-/**
- * @param string $password
- * @return bool
- */
-function verify_password(string $password): bool {
-    return ($password === MASTER_PASSWORD);
-}
-
 /**
  * Helper function to retrieve all valid TR codes mapped from the master table.
  *
@@ -73,20 +63,21 @@ function get_master_records(?string $search_query = null): array {
         ORDER BY tr_code ASC, id ASC
     ");
     $stmt->execute($params);
-    return $stmt->fetchAll();
+    $records = $stmt->fetchAll();
+
+    usort($records, function($a, $b) {
+        return strnatcasecmp($a['tr_code'] ?? '', $b['tr_code'] ?? '');
+    });
+
+    return $records;
 }
 
 /**
  * @param array $data
- * @param string $password
  * @return int
  * @throws Exception
  */
-function add_master_record(array $data, string $password): int {
-    if (!verify_password($password)) {
-        throw new Exception("Incorrect password! Master record changes require password '12345'.");
-    }
-
+function add_master_record(array $data): int {
     $tr_code = strtoupper(trim($data['tr_code'] ?? ''));
     if (empty($tr_code)) {
         throw new Exception("TR Code is required.");
@@ -123,15 +114,10 @@ function add_master_record(array $data, string $password): int {
 /**
  * @param int|string $id
  * @param array $data
- * @param string $password
  * @return void
  * @throws Exception
  */
-function update_master_record($id, array $data, string $password): void {
-    if (!verify_password($password)) {
-        throw new Exception("Incorrect password! Master record changes require password '12345'.");
-    }
-
+function update_master_record($id, array $data): void {
     $tr_code = strtoupper(trim($data['tr_code'] ?? ''));
     if (empty($tr_code)) {
         throw new Exception("TR Code is required.");
@@ -167,15 +153,10 @@ function update_master_record($id, array $data, string $password): void {
 
 /**
  * @param int|string $id
- * @param string $password
  * @return void
  * @throws Exception
  */
-function delete_master_record($id, string $password): void {
-    if (!verify_password($password)) {
-        throw new Exception("Incorrect password! Master record changes require password '12345'.");
-    }
-
+function delete_master_record($id): void {
     $pdo = initialize_database();
     $stmt = $pdo->prepare("DELETE FROM scheme_configuration_master WHERE id = ?");
     $stmt->execute([(int)$id]);

@@ -70,6 +70,46 @@ function to_db_date($value) {
     return null;
 }
 
+function to_db_time($value) {
+    if ($value === null || $value === '') return "00:00:00";
+    $text = trim((string)$value);
+    if ($text === '') return "00:00:00";
+
+    // 1. Excel Serial Number float (e.g., 45150.37692 or 0.37692)
+    if (is_numeric($text) && (float)$text >= 0) {
+        $num = (float)$text;
+        $frac = $num - floor($num);
+        if ($frac > 0) {
+            $total_sec = (int)round($frac * 86400);
+            $hours = (int)floor($total_sec / 3600) % 24;
+            $minutes = (int)floor(($total_sec % 3600) / 60);
+            $seconds = $total_sec % 60;
+            return sprintf('%02d:%02d:%02d', $hours, $minutes, $seconds);
+        }
+    }
+
+    // 2. Datetime string containing date and time, e.g. "2026-08-06 09:02:46" or "06/08/2026 10:35:56" or "06-08-2026 09:02:46 PM"
+    if (preg_match('/\d{1,4}[\/\.-]\d{1,2}[\/\.-]\d{1,4}\s+(\d{1,2}:\d{2}(?::\d{2})?(?:\s*[AP]M)?)/i', $text, $m)) {
+        $ts = strtotime($m[1]);
+        if ($ts !== false) {
+            return date('H:i:s', $ts);
+        }
+        $parts = explode(':', $m[1]);
+        return sprintf('%02d:%02d:%02d', (int)($parts[0]??0), (int)($parts[1]??0), (int)($parts[2]??0));
+    }
+
+    // 3. Standalone time string like "09:02:46" or "9:02 AM" or "14:11:04"
+    if (preg_match('/\b(\d{1,2}:\d{2}(?::\d{2})?(?:\s*[AP]M)?)\b/i', $text, $m)) {
+        $ts = strtotime($m[1]);
+        if ($ts !== false) {
+            return date('H:i:s', $ts);
+        }
+    }
+
+    return "00:00:00";
+}
+
+
 function indian_number($value) {
     $val = round((float)($value ?? 0.0), 2);
     $sign = ($val < 0) ? "-" : "";

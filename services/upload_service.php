@@ -6,6 +6,7 @@
 require_once __DIR__ . '/../db.php';
 require_once __DIR__ . '/../helpers.php';
 require_once __DIR__ . '/master_service.php';
+require_once __DIR__ . '/xls_parser.php';
 
 /**
  * Parse native binary .xlsx (OpenXML Zip container) using built-in ZipArchive & SimpleXML.
@@ -117,8 +118,16 @@ function import_daily_payment_file(string $file_path, string $file_name, string 
     $ext = strtolower(pathinfo($file_name, PATHINFO_EXTENSION));
     $rows = [];
 
-    if ($ext === 'xlsx' || $ext === 'xls') {
+    if ($ext === 'xls') {
+        $rows = SimpleXlsReader::parseFile($file_path);
+        if (empty($rows)) {
+            $rows = parse_xlsx_file($file_path);
+        }
+    } elseif ($ext === 'xlsx') {
         $rows = parse_xlsx_file($file_path);
+        if (empty($rows)) {
+            $rows = SimpleXlsReader::parseFile($file_path);
+        }
     }
 
     if (empty($rows)) {
@@ -165,12 +174,24 @@ function import_daily_payment_file(string $file_path, string $file_name, string 
             $header_idx = $idx;
             foreach ($row as $c_idx => $c_name) {
                 $c_clean = strtolower(trim($c_name));
-                if (strpos($c_clean, 'posting date') !== false || strpos($c_clean, 'date') !== false) $col_map['posting_date'] = $c_idx;
-                elseif (strpos($c_clean, 'posting time') !== false || strpos($c_clean, 'time') !== false) $col_map['posting_time'] = $c_idx;
-                elseif (strpos($c_clean, 'state') !== false || strpos($c_clean, 'govt') !== false) $col_map['state'] = $c_idx;
-                elseif (strpos($c_clean, 'sg account') !== false || strpos($c_clean, 'tr code') !== false || strpos($c_clean, 'tr') !== false || strpos($c_clean, 'scheme') !== false || strpos($c_clean, 'account name') !== false || strpos($c_clean, 'particular') !== false) $col_map['tr_code'] = $c_idx;
-                elseif (strpos($c_clean, 'amount') !== false || strpos($c_clean, 'amt') !== false || strpos($c_clean, 'rs') !== false) $col_map['amount'] = $c_idx;
-                elseif (strpos($c_clean, 'cg account') !== false || strpos($c_clean, 'udch') !== false || strpos($c_clean, 'head') !== false) $col_map['cg_code'] = $c_idx;
+                if (strpos($c_clean, 'posting date') !== false || strpos($c_clean, 'posting/accounting') !== false || strpos($c_clean, 'date') !== false) {
+                    $col_map['posting_date'] = $c_idx;
+                }
+                if (strpos($c_clean, 'posting time') !== false || strpos($c_clean, 'time') !== false) {
+                    $col_map['posting_time'] = $c_idx;
+                }
+                if (strpos($c_clean, 'state') !== false || strpos($c_clean, 'govt') !== false) {
+                    $col_map['state'] = $c_idx;
+                }
+                if (strpos($c_clean, 'sg account') !== false || strpos($c_clean, 'tr code') !== false || strpos($c_clean, 'tr') !== false || strpos($c_clean, 'scheme') !== false || strpos($c_clean, 'account name') !== false || strpos($c_clean, 'particular') !== false) {
+                    $col_map['tr_code'] = $c_idx;
+                }
+                if (strpos($c_clean, 'amount') !== false || strpos($c_clean, 'amt') !== false || strpos($c_clean, 'rs') !== false) {
+                    $col_map['amount'] = $c_idx;
+                }
+                if (strpos($c_clean, 'cg account') !== false || strpos($c_clean, 'udch') !== false || strpos($c_clean, 'head') !== false) {
+                    $col_map['cg_code'] = $c_idx;
+                }
             }
             break;
         }
@@ -189,11 +210,22 @@ function import_daily_payment_file(string $file_path, string $file_name, string 
 
         $p_date_raw = isset($col_map['posting_date']) ? ($row[$col_map['posting_date']] ?? '') : ($row[0] ?? '');
         $p_time_raw = isset($col_map['posting_time']) ? ($row[$col_map['posting_time']] ?? '') : '';
-        if (empty($p_time_raw) && isset($row[1]) && preg_match('/\d{1,2}:\d{2}/', (string)$row[1])) {
-            $p_time_raw = (string)$row[1];
+
+        // Extract posting time accurately
+        $p_time = to_db_time($p_time_raw);
+        if ($p_time === '00:00:00') {
+            $p_time = to_db_time($p_date_raw);
         }
-        $p_time_clean = mb_substr(trim((string)$p_time_raw), 0, 20);
-        $p_time = ($p_time_clean !== '') ? $p_time_clean : '00:00:00';
+        if ($p_time === '00:00:00') {
+            foreach ($row as $cell) {
+                $chk_time = to_db_time((string)$cell);
+                if ($chk_time !== '00:00:00') {
+                    $p_time = $chk_time;
+                    break;
+                }
+            }
+        }
+
 
         $state_raw = isset($col_map['state']) ? ($row[$col_map['state']] ?? '') : ($row[2] ?? '');
         $state_clean = mb_substr(trim((string)$state_raw), 0, 100);
