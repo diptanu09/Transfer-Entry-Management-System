@@ -291,8 +291,11 @@ class SimpleXlsReader {
 
     /**
      * Decode BIFF RK value.
+     *
+     * @param int $rk
+     * @return float|int
      */
-    private static function decodeRk(int $rk): float|int {
+    private static function decodeRk(int $rk) {
         if ($rk & 0x02) {
             $val = $rk >> 2;
         } else {
