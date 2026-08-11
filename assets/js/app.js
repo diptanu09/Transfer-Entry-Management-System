@@ -5,6 +5,7 @@
 let currentUserRole = 'VIEWER';
 
 document.addEventListener('DOMContentLoaded', () => {
+  initSidebarAndTheme();
   initAuth();
   initTabs();
   initUploadPage();
@@ -14,6 +15,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initSummaryPage();
   initDetailedPage();
   initMasterPage();
+  loadDashboardKpis();
 });
 
 // Switch Auth Tab (Login <-> Register)
@@ -84,10 +86,11 @@ async function checkAuthStatus() {
 
       // Show Admin User Management tab only if ADMIN
       if (usersTabNav) {
-        usersTabNav.style.display = (currentUserRole === 'ADMIN') ? 'inline-block' : 'none';
+        usersTabNav.style.display = (currentUserRole === 'ADMIN') ? 'flex' : 'none';
       }
 
       applyRoleUiRestrictions();
+      loadDashboardKpis();
     } else {
       if (modal) modal.classList.add('active');
       if (userArea) userArea.style.display = 'none';
@@ -309,10 +312,81 @@ async function rejectUser(userId, username) {
   }
 }
 
+// Sidebar & Theme System
+function initSidebarAndTheme() {
+  const sidebar = document.getElementById('sidebar');
+  const sidebarBrandBtn = document.getElementById('sidebar-brand-btn');
+  const mobileMenuBtn = document.getElementById('mobile-menu-btn');
+  const sidebarOverlay = document.getElementById('sidebar-overlay');
+  const themeToggleBtn = document.getElementById('theme-toggle-btn');
+  const sunIcon = document.getElementById('theme-icon-sun');
+  const moonIcon = document.getElementById('theme-icon-moon');
+
+  // Sidebar collapse persistence (default to collapsed '1')
+  const savedState = localStorage.getItem('sidebar_collapsed');
+  const isCollapsed = (savedState === null) ? true : (savedState === '1');
+  if (sidebar) {
+    if (isCollapsed) {
+      sidebar.classList.add('collapsed');
+    } else {
+      sidebar.classList.remove('collapsed');
+    }
+  }
+
+  if (sidebarBrandBtn && sidebar) {
+    sidebarBrandBtn.addEventListener('click', () => {
+      sidebar.classList.toggle('collapsed');
+      localStorage.setItem('sidebar_collapsed', sidebar.classList.contains('collapsed') ? '1' : '0');
+    });
+  }
+
+  // Mobile menu drawer
+  if (mobileMenuBtn && sidebar && sidebarOverlay) {
+    mobileMenuBtn.addEventListener('click', () => {
+      sidebar.classList.add('mobile-open');
+      sidebarOverlay.classList.add('active');
+    });
+
+    sidebarOverlay.addEventListener('click', () => {
+      sidebar.classList.remove('mobile-open');
+      sidebarOverlay.classList.remove('active');
+    });
+  }
+
+  // Light/Dark Theme Switcher
+  const savedTheme = localStorage.getItem('theme') || 'light';
+  applyTheme(savedTheme);
+
+  if (themeToggleBtn) {
+    themeToggleBtn.addEventListener('click', () => {
+      const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
+      const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+      applyTheme(newTheme);
+    });
+  }
+
+  function applyTheme(theme) {
+    if (theme === 'dark') {
+      document.documentElement.setAttribute('data-theme', 'dark');
+      if (sunIcon) sunIcon.style.display = 'none';
+      if (moonIcon) moonIcon.style.display = 'block';
+    } else {
+      document.documentElement.removeAttribute('data-theme');
+      if (sunIcon) sunIcon.style.display = 'block';
+      if (moonIcon) moonIcon.style.display = 'none';
+    }
+    localStorage.setItem('theme', theme);
+  }
+}
+
 // Tab Navigation
 function initTabs() {
   const tabBtns = document.querySelectorAll('.tab-btn');
   const tabContents = document.querySelectorAll('.tab-content');
+  const pageTitle = document.getElementById('page-title-heading');
+  const pageSubtitle = document.getElementById('page-subtitle-text');
+  const sidebar = document.getElementById('sidebar');
+  const sidebarOverlay = document.getElementById('sidebar-overlay');
 
   tabBtns.forEach(btn => {
     btn.addEventListener('click', () => {
@@ -324,14 +398,69 @@ function initTabs() {
       const targetContent = document.getElementById(targetId);
       if (targetContent) targetContent.classList.add('active');
 
+      // Update Topbar Heading
+      if (pageTitle && btn.dataset.title) pageTitle.innerText = btn.dataset.title;
+      if (pageSubtitle && btn.dataset.subtitle) pageSubtitle.innerText = btn.dataset.subtitle;
+
+      // Close mobile drawer if open
+      if (sidebar) sidebar.classList.remove('mobile-open');
+      if (sidebarOverlay) sidebarOverlay.classList.remove('active');
+
       if (targetId === 'tab-upload') loadRecentUploads();
       if (targetId === 'tab-view-data') loadViewData();
       if (targetId === 'tab-generate') loadNextSectionalNumber();
       if (targetId === 'tab-view-pdf') loadPdfList();
       if (targetId === 'tab-master') loadMasterRecords();
       if (targetId === 'tab-users') loadUsersList();
+
+      loadDashboardKpis();
     });
   });
+}
+
+// Tab Switch Helper
+function switchTabById(tabId) {
+  const targetBtn = document.querySelector(`.tab-btn[data-tab="${tabId}"]`);
+  if (targetBtn) {
+    targetBtn.click();
+  }
+}
+
+// KPI Dashboard Aggregation
+async function loadDashboardKpis() {
+  const kpiRecords = document.getElementById('kpi-total-records');
+  const kpiAmount = document.getElementById('kpi-total-amount');
+  const kpiVouchers = document.getElementById('kpi-generated-vouchers');
+  const kpiSchemes = document.getElementById('kpi-active-schemes');
+
+  try {
+    const [uploadsRes, masterRes, pdfsRes] = await Promise.all([
+      fetch('api.php?action=get_recent_uploads').then(r => r.json()),
+      fetch('api.php?action=get_master_records').then(r => r.json()),
+      fetch('api.php?action=get_pdf_list').then(r => r.json())
+    ]);
+
+    if (uploadsRes.success && uploadsRes.uploads) {
+      let totalRecs = 0;
+      let totalAmt = 0;
+      uploadsRes.uploads.forEach(item => {
+        totalRecs += parseInt(item.record_count || item.total_records || 0, 10);
+        totalAmt += parseFloat(item.total_amount || 0);
+      });
+      if (kpiRecords) kpiRecords.innerText = totalRecs.toLocaleString('en-IN');
+      if (kpiAmount) kpiAmount.innerText = '₹' + totalAmt.toLocaleString('en-IN', { maximumFractionDigits: 2 });
+    }
+
+    if (masterRes.success && masterRes.records) {
+      if (kpiSchemes) kpiSchemes.innerText = masterRes.records.length.toLocaleString('en-IN');
+    }
+
+    if (pdfsRes.success && pdfsRes.reports) {
+      if (kpiVouchers) kpiVouchers.innerText = pdfsRes.reports.length.toLocaleString('en-IN');
+    }
+  } catch (err) {
+    // Silent fail if unauthenticated or network error
+  }
 }
 
 // Utility Helpers
