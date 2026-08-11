@@ -143,12 +143,12 @@ $current_month = date('m/Y');
             <input type="text" id="gen-to-date" class="form-control" value="<?= $today_str ?>">
           </div>
           <div class="form-group">
-            <label>Accounting Month (MM/YYYY)</label>
-            <input type="text" id="gen-acct-month" class="form-control" value="<?= $current_month ?>">
+            <label>Accounting Month (MM/YYYY) <span style="color:red;">*</span></label>
+            <input type="text" id="gen-acct-month" class="form-control" value="<?= $current_month ?>" required placeholder="MM/YYYY">
           </div>
           <div class="form-group">
-            <label>Starting Sectional Number</label>
-            <input type="number" id="gen-sec-num" class="form-control" value="1">
+            <label>Starting Sectional Number <span style="color:red;">*</span></label>
+            <input type="number" id="gen-sec-num" class="form-control" value="1" min="1" required>
           </div>
         </div>
 

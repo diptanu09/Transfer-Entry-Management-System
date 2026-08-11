@@ -9,10 +9,17 @@ require_once __DIR__ . '/../helpers.php';
 require_once __DIR__ . '/../fpdf.php';
 
 /**
+ * @param string|null $accounting_month
  * @return int
  */
-function get_next_sectional_number(): int {
+function get_next_sectional_number(?string $accounting_month = null): int {
     $pdo = initialize_database();
+    $acct_month = trim($accounting_month ?? '');
+    if ($acct_month !== '') {
+        $stmt = $pdo->prepare("SELECT COALESCE(MAX(sectional_number), 0) + 1 FROM generated_transfer_reports WHERE accounting_month = ?");
+        $stmt->execute([$acct_month]);
+        return (int)$stmt->fetchColumn();
+    }
     $stmt = $pdo->query("SELECT COALESCE(MAX(sectional_number), 0) + 1 FROM generated_transfer_reports");
     return (int)$stmt->fetchColumn();
 }
@@ -433,7 +440,17 @@ function generate_batch_merged_pdf_content(array $records, string $accounting_mo
  * @throws Exception
  */
 function generate_transfer_reports(string $start_date_str, string $end_date_str, string $accounting_month, ?int $starting_sec_num = null): array {
+    $accounting_month = trim($accounting_month);
+    if ($accounting_month === '') {
+        throw new Exception("Accounting Month is a mandatory field.");
+    }
     parse_accounting_month($accounting_month);
+
+    if ($starting_sec_num === null || (int)$starting_sec_num <= 0) {
+        throw new Exception("Starting Sectional Number is a mandatory field and must be greater than 0.");
+    }
+    $start_sec = (int)$starting_sec_num;
+
     $start_db = to_db_date($start_date_str);
     $end_db = to_db_date($end_date_str);
 
@@ -526,7 +543,25 @@ function generate_transfer_reports(string $start_date_str, string $end_date_str,
         $valid_records[] = $r;
     }
 
-    $next_sec_num = ($starting_sec_num !== null) ? (int)$starting_sec_num : get_next_sectional_number();
+    $end_sec = $start_sec + count($valid_records) - 1;
+
+    $chk_stmt = $pdo->prepare("
+        SELECT sectional_number 
+        FROM generated_transfer_reports 
+        WHERE accounting_month = ? 
+          AND sectional_number BETWEEN ? AND ?
+        ORDER BY sectional_number ASC
+    ");
+    $chk_stmt->execute([$accounting_month, $start_sec, $end_sec]);
+    $existing_rows = $chk_stmt->fetchAll();
+
+    if (!empty($existing_rows)) {
+        $existing_nums = array_column($existing_rows, 'sectional_number');
+        $nums_str = implode(', ', $existing_nums);
+        throw new Exception("Sectional number(s) {$nums_str} already exist for accounting month {$accounting_month}. Sectional number and accounting month combined must be unique.");
+    }
+
+    $next_sec_num = $start_sec;
     $generated_count = 0;
 
     $pdo->beginTransaction();

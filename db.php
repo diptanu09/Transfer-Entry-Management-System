@@ -312,19 +312,105 @@ function get_db_connection() {
         if (extension_loaded('oci8') && function_exists('oci_connect')) {
             try {
                 $db = new Oci8PdoWrapper(DB_USER, DB_PASS, $tns);
-                return $db;
             } catch (Throwable $e) {
                 // Fall back to SQLite if Oracle connection fails
             }
         }
 
-        $sqlite_file = __DIR__ . '/data/daily_reports.db';
-        $pdo = new PDO('sqlite:' . $sqlite_file);
-        $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-        $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
-        $db = new SafePdoWrapper($pdo);
+        if ($db === null) {
+            $sqlite_file = __DIR__ . '/data/daily_reports.db';
+            $pdo = new PDO('sqlite:' . $sqlite_file);
+            $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+            $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+            $db = new SafePdoWrapper($pdo);
+        }
     }
+    ensure_database_schema($db);
     return $db;
+}
+
+/**
+ * Ensures composite unique constraint on (accounting_month, sectional_number) in generated_transfer_reports
+ * and drops legacy single-column UNIQUE constraints on sectional_number (e.g. Oracle SYS_C... constraints).
+ * @param Oci8PdoWrapper|SafePdoWrapper $db
+ */
+function ensure_database_schema($db) {
+    static $checked = false;
+    if ($checked) return;
+    $checked = true;
+
+    try {
+        if ($db instanceof Oci8PdoWrapper) {
+            // 1. Drop legacy single-column UNIQUE constraints on SECTIONAL_NUMBER in Oracle
+            $sqlCons = "
+                SELECT uc.constraint_name 
+                FROM user_constraints uc
+                JOIN user_cons_columns ucc ON uc.constraint_name = ucc.constraint_name
+                WHERE UPPER(uc.table_name) = 'GENERATED_TRANSFER_REPORTS'
+                  AND uc.constraint_type = 'U'
+                  AND UPPER(ucc.column_name) = 'SECTIONAL_NUMBER'
+                  AND uc.constraint_name NOT IN (
+                      SELECT constraint_name 
+                      FROM user_cons_columns 
+                      WHERE UPPER(table_name) = 'GENERATED_TRANSFER_REPORTS' 
+                        AND UPPER(column_name) <> 'SECTIONAL_NUMBER'
+                  )
+            ";
+            try {
+                $stmt = $db->prepare($sqlCons);
+                $stmt->execute();
+                $consRows = $stmt->fetchAll();
+                foreach ($consRows as $cRow) {
+                    $cName = $cRow['constraint_name'] ?? '';
+                    if ($cName) {
+                        try {
+                            $db->exec("ALTER TABLE GENERATED_TRANSFER_REPORTS DROP CONSTRAINT {$cName}");
+                        } catch (Throwable $eDropCons) {}
+                    }
+                }
+            } catch (Throwable $exCons) {}
+
+            // 2. Drop legacy single-column UNIQUE indexes on SECTIONAL_NUMBER in Oracle
+            $sqlIdx = "
+                SELECT ui.index_name 
+                FROM user_indexes ui
+                JOIN user_ind_columns uic ON ui.index_name = uic.index_name
+                WHERE UPPER(ui.table_name) = 'GENERATED_TRANSFER_REPORTS'
+                  AND ui.uniqueness = 'UNIQUE'
+                  AND UPPER(uic.column_name) = 'SECTIONAL_NUMBER'
+                  AND ui.index_name NOT IN (
+                      SELECT index_name 
+                      FROM user_ind_columns 
+                      WHERE UPPER(table_name) = 'GENERATED_TRANSFER_REPORTS' 
+                        AND UPPER(column_name) <> 'SECTIONAL_NUMBER'
+                  )
+            ";
+            try {
+                $stmtIdx = $db->prepare($sqlIdx);
+                $stmtIdx->execute();
+                $idxRows = $stmtIdx->fetchAll();
+                foreach ($idxRows as $iRow) {
+                    $iName = $iRow['index_name'] ?? '';
+                    if ($iName && strtoupper($iName) !== 'IDX_ACCT_SEC_NUM') {
+                        try {
+                            $db->exec("DROP INDEX {$iName}");
+                        } catch (Throwable $eDropIdx) {}
+                    }
+                }
+            } catch (Throwable $exIdx) {}
+
+            // 3. Create composite unique index on (accounting_month, sectional_number)
+            try {
+                $db->exec("CREATE UNIQUE INDEX idx_acct_sec_num ON GENERATED_TRANSFER_REPORTS (accounting_month, sectional_number)");
+            } catch (Throwable $exCreate) {}
+
+            return;
+        }
+
+        @$db->exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_acct_sec_num ON generated_transfer_reports (accounting_month, sectional_number)");
+    } catch (Throwable $ex) {
+        // Ignore if index already exists
+    }
 }
 
 /**

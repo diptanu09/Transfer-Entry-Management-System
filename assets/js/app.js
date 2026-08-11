@@ -495,13 +495,21 @@ function initGeneratePdfPage() {
   loadNextSectionalNumber();
   const btn = document.getElementById('btn-generate-pdfs');
   if (btn) btn.addEventListener('click', generatePdfs);
+
+  const acctMonthInput = document.getElementById('gen-acct-month');
+  if (acctMonthInput) {
+    acctMonthInput.addEventListener('input', () => loadNextSectionalNumber());
+    acctMonthInput.addEventListener('change', () => loadNextSectionalNumber());
+  }
 }
 
-async function loadNextSectionalNumber() {
+async function loadNextSectionalNumber(acctMonthOverride) {
   const input = document.getElementById('gen-sec-num');
+  const monthInput = document.getElementById('gen-acct-month');
   if (!input) return;
+  const month = acctMonthOverride !== undefined ? acctMonthOverride : (monthInput ? monthInput.value.trim() : '');
   try {
-    const res = await fetch('api.php?action=get_next_sectional_number');
+    const res = await fetch(`api.php?action=get_next_sectional_number&accounting_month=${encodeURIComponent(month)}`);
     const data = await res.json();
     if (data.success) input.value = data.next_sectional_number;
   } catch (e) { }
@@ -514,10 +522,19 @@ async function generatePdfs() {
   const secNumInput = document.getElementById('gen-sec-num');
   const statusLabel = document.getElementById('gen-status');
 
-  const fromDate = fromDateInput ? fromDateInput.value : '';
-  const toDate = toDateInput ? toDateInput.value : '';
-  const acctMonth = acctMonthInput ? acctMonthInput.value : '';
-  const secNum = secNumInput ? secNumInput.value : '';
+  const fromDate = fromDateInput ? fromDateInput.value.trim() : '';
+  const toDate = toDateInput ? toDateInput.value.trim() : '';
+  const acctMonth = acctMonthInput ? acctMonthInput.value.trim() : '';
+  const secNum = secNumInput ? secNumInput.value.trim() : '';
+
+  if (!acctMonth) {
+    showAlertModal("Validation Error", "Accounting Month is a mandatory field.", true);
+    return;
+  }
+  if (!secNum || parseInt(secNum, 10) <= 0) {
+    showAlertModal("Validation Error", "Starting Sectional Number is a mandatory field and must be greater than 0.", true);
+    return;
+  }
 
   if (statusLabel) statusLabel.innerText = "Validating TR codes & generating reports... Please wait.";
 
@@ -543,7 +560,7 @@ async function generatePdfs() {
     }
 
     if (statusLabel) statusLabel.innerText = `Generated ${data.generated} PDF report(s) successfully!`;
-    loadNextSectionalNumber();
+    loadNextSectionalNumber(acctMonth);
 
     const btnMergedGen = document.getElementById('btn-download-merged-gen');
     if (btnMergedGen) {

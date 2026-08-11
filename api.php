@@ -241,8 +241,16 @@ try {
             require_role(['ADMIN', 'OPERATOR']);
             $from_date = $_POST['from_date'] ?? '';
             $to_date = $_POST['to_date'] ?? '';
-            $acct_month = $_POST['accounting_month'] ?? '';
-            $sec_num = isset($_POST['sectional_number']) ? (int)$_POST['sectional_number'] : null;
+            $acct_month = trim($_POST['accounting_month'] ?? '');
+            $sec_num_raw = $_POST['sectional_number'] ?? '';
+
+            if (empty($acct_month)) {
+                send_error("Accounting Month is a mandatory field.");
+            }
+            if ($sec_num_raw === '' || $sec_num_raw === null || (int)$sec_num_raw <= 0) {
+                send_error("Starting Sectional Number is a mandatory field and must be greater than 0.");
+            }
+            $sec_num = (int)$sec_num_raw;
 
             $res = generate_transfer_reports($from_date, $to_date, $acct_month, $sec_num);
             send_json([
@@ -250,7 +258,7 @@ try {
                 'generated' => $res['generated'],
                 'skipped' => $res['skipped'],
                 'warnings' => $res['warnings'],
-                'next_sectional_number' => get_next_sectional_number()
+                'next_sectional_number' => get_next_sectional_number($acct_month)
             ]);
             break;
 
@@ -293,7 +301,8 @@ try {
             break;
 
         case 'get_next_sectional_number':
-            send_json(['success' => true, 'next_sectional_number' => get_next_sectional_number()]);
+            $acct_month = trim($_GET['accounting_month'] ?? $_POST['accounting_month'] ?? '');
+            send_json(['success' => true, 'next_sectional_number' => get_next_sectional_number($acct_month)]);
             break;
 
         case 'get_pdf_list':
