@@ -6,6 +6,7 @@ let currentUserRole = 'VIEWER';
 
 document.addEventListener('DOMContentLoaded', () => {
   initSidebarAndTheme();
+  initDatePickers();
   initAuth();
   initTabs();
   initUploadPage();
@@ -426,9 +427,19 @@ function switchTabById(tabId) {
   }
 }
 
+// DatePicker Calendar Initialization
+function initDatePickers() {
+  if (typeof flatpickr !== 'undefined') {
+    flatpickr('#upload-date, #view-start-date, #view-end-date, #gen-from-date, #gen-to-date, #pdf-start-date, #pdf-end-date, #sum-from-date, #sum-to-date, #det-from-date, #det-to-date', {
+      dateFormat: 'd/m/Y',
+      allowInput: true
+    });
+  }
+}
+
 // KPI Dashboard Aggregation
 async function loadDashboardKpis() {
-  const kpiRecords = document.getElementById('kpi-total-records');
+  const kpiFiles = document.getElementById('kpi-uploaded-files');
   const kpiAmount = document.getElementById('kpi-total-amount');
   const kpiVouchers = document.getElementById('kpi-generated-vouchers');
   const kpiSchemes = document.getElementById('kpi-active-schemes');
@@ -441,13 +452,11 @@ async function loadDashboardKpis() {
     ]);
 
     if (uploadsRes.success && uploadsRes.uploads) {
-      let totalRecs = 0;
       let totalAmt = 0;
       uploadsRes.uploads.forEach(item => {
-        totalRecs += parseInt(item.record_count || item.total_records || 0, 10);
         totalAmt += parseFloat(item.total_amount || 0);
       });
-      if (kpiRecords) kpiRecords.innerText = totalRecs.toLocaleString('en-IN');
+      if (kpiFiles) kpiFiles.innerText = uploadsRes.uploads.length.toLocaleString('en-IN');
       if (kpiAmount) kpiAmount.innerText = '₹' + totalAmt.toLocaleString('en-IN', { maximumFractionDigits: 2 });
     }
 
