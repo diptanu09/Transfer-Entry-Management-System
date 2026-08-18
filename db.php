@@ -7,8 +7,11 @@
 define('DB_HOST', '192.168.100.247');    // Oracle Server IP
 define('DB_PORT', '1521');               // Oracle Port
 define('DB_SID',  'DB11G');              // Oracle SID
-define('DB_USER', 'TransferEntry');      // Schema Username
-define('DB_PASS', 'TransferEntry');      // Schema Password
+define('DB_USER', 'TransferEntry');      // Main Application Schema Username
+define('DB_PASS', 'TransferEntry');      // Main Application Schema Password
+
+define('VLCS_DB_USER', 'vlcs');          // TE Batch Posting Service Schema Username
+define('VLCS_DB_PASS', 'vlcs');          // TE Batch Posting Service Schema Password
 
 // Fallback constant definitions for VS Code static analysis
 if (!defined('OCI_COMMIT_ON_SUCCESS')) define('OCI_COMMIT_ON_SUCCESS', 32);
@@ -330,6 +333,35 @@ function get_db_connection() {
 }
 
 /**
+ * Get dedicated database connection specifically for TE Batch Posting service (schema vlcs).
+ * Connects to Oracle as user 'vlcs' / 'vlcs', fallback to main DB connection or SQLite.
+ *
+ * @return Oci8PdoWrapper|SafePdoWrapper
+ */
+function get_vlcs_db_connection() {
+    static $vlcs_db = null;
+    if ($vlcs_db === null) {
+        $tns = "(DESCRIPTION =
+            (ADDRESS = (PROTOCOL = TCP)(HOST = " . DB_HOST . ")(PORT = " . DB_PORT . "))
+            (CONNECT_DATA = (SID = " . DB_SID . "))
+        )";
+
+        if (extension_loaded('oci8') && function_exists('oci_connect')) {
+            try {
+                $vlcs_db = new Oci8PdoWrapper(VLCS_DB_USER, VLCS_DB_PASS, $tns);
+            } catch (Throwable $e) {
+                // Fallback if dedicated vlcs Oracle connection is unavailable
+            }
+        }
+
+        if ($vlcs_db === null) {
+            $vlcs_db = get_db_connection();
+        }
+    }
+    return $vlcs_db;
+}
+
+/**
  * Ensures composite unique constraint on (accounting_month, sectional_number) in generated_transfer_reports
  * and drops legacy single-column UNIQUE constraints on sectional_number (e.g. Oracle SYS_C... constraints).
  * @param Oci8PdoWrapper|SafePdoWrapper $db
@@ -404,12 +436,246 @@ function ensure_database_schema($db) {
                 $db->exec("CREATE UNIQUE INDEX idx_acct_sec_num ON GENERATED_TRANSFER_REPORTS (accounting_month, sectional_number)");
             } catch (Throwable $exCreate) {}
 
+            // 4. Ensure vlcs schema tables in Oracle if not present
+            try {
+                $db->exec("
+                    CREATE TABLE B2_TE_HDRS (
+                        TE_NO NUMBER(8,0) PRIMARY KEY,
+                        GRANT_CODE NUMBER(2,0) DEFAULT 2,
+                        PARAMETER_CODE NUMBER(3,0) DEFAULT 27,
+                        SOURCE_CODE NUMBER(3,0) DEFAULT 55,
+                        TE_DATE DATE,
+                        SST_TAG VARCHAR2(1 BYTE) DEFAULT 'N',
+                        BELATED_TAG VARCHAR2(1 BYTE) DEFAULT 'N',
+                        DR_CR_DD_DC_TAG VARCHAR2(2 BYTE),
+                        DAA_TAG VARCHAR2(1 BYTE),
+                        CONTINGENCY_TAG VARCHAR2(1 BYTE) DEFAULT 'N',
+                        FIN_YEAR_CODE NUMBER(2,0),
+                        ACCOUNTING_MONTH NUMBER(2,0),
+                        MONTH_OF_ACCOUNT DATE,
+                        CREATE_USER VARCHAR2(10 BYTE) DEFAULT 'DIR',
+                        CREATE_DATE DATE,
+                        MODIFY_USER VARCHAR2(10 BYTE) DEFAULT 'DIR',
+                        MODIFY_DATE DATE,
+                        TE_APPROVE_TAG VARCHAR2(1 BYTE) DEFAULT 'Y',
+                        TE_DESCR VARCHAR2(60 BYTE),
+                        SL_NO NUMBER(3,0) DEFAULT 28,
+                        SOURCE_MINISTRY_TAG VARCHAR2(1 BYTE) DEFAULT 'S',
+                        TE_SANCTION_NO VARCHAR2(18 BYTE),
+                        TAG VARCHAR2(1 BYTE) DEFAULT 'A',
+                        MAJOR_HEAD_CODE NUMBER(4,0),
+                        SUB_MAJOR_HEAD_CODE NUMBER(4,0),
+                        MINOR_HEAD_CODE NUMBER(4,0),
+                        SUB_HEAD_CODE NUMBER(4,0),
+                        SUB_SUB_HEAD_CODE NUMBER(4,0),
+                        DETAIL_HEAD_CODE NUMBER(4,0),
+                        SUB_DETAIL_HEAD_CODE NUMBER(4,0),
+                        INITIAL_AMOUNT NUMBER(16,2),
+                        CAT_SCHEME_CODE NUMBER(4,0) DEFAULT 8
+                    )
+                ");
+            } catch (Throwable $exHdrS) {}
+
+            try {
+                $db->exec("
+                    CREATE TABLE B2_TE_HDR (
+                        TE_NO NUMBER(8,0),
+                        MAJOR_HEAD_CODE NUMBER(4,0) DEFAULT 8675,
+                        SUB_MAJOR_HEAD_CODE NUMBER(2,0) DEFAULT 0,
+                        MINOR_HEAD_CODE NUMBER(3,0) DEFAULT 106,
+                        SUB_HEAD_CODE NUMBER(4,0) DEFAULT 3,
+                        SUB_SUB_HEAD_CODE NUMBER(4,0) DEFAULT 0,
+                        DETAIL_HEAD_CODE NUMBER(3,0) DEFAULT 0,
+                        SUB_DETAIL_HEAD_CODE NUMBER(3,0) DEFAULT 0,
+                        INITIAL_AMOUNT NUMBER(14,2),
+                        CREATE_USER VARCHAR2(10 BYTE) DEFAULT 'DIR',
+                        CREATE_DATE DATE,
+                        MODIFY_USER VARCHAR2(10 BYTE) DEFAULT 'DIR',
+                        MODIFY_DATE DATE,
+                        DR_CR_DD_DC_TAG VARCHAR2(2 BYTE) DEFAULT 'DR',
+                        DAA_TAG VARCHAR2(1 BYTE) DEFAULT 'N',
+                        CAT_SCHEME_CODE NUMBER(4,0) DEFAULT 8,
+                        GRANT_CODE NUMBER(2,0) DEFAULT 43,
+                        PARAMETER_CODE NUMBER(2,0) DEFAULT 27
+                    )
+                ");
+            } catch (Throwable $exHdr) {}
+
+            try {
+                $db->exec("
+                    CREATE TABLE B2_TE_DTLS (
+                        TE_NO NUMBER(8,0),
+                        SRL_NO NUMBER(8,0),
+                        GRANT_CODE NUMBER(2,0) DEFAULT 43,
+                        PARAMETER_CODE NUMBER(3,0) DEFAULT 27,
+                        MAJOR_HEAD_CODE NUMBER(4,0) DEFAULT 1601,
+                        SUB_MAJOR_HEAD_CODE NUMBER(2,0) DEFAULT 6,
+                        MINOR_HEAD_CODE NUMBER(3,0) DEFAULT 101,
+                        SUB_HEAD_CODE NUMBER(4,0),
+                        SUB_SUB_HEAD_CODE NUMBER(4,0) DEFAULT 0,
+                        DETAIL_HEAD_CODE NUMBER(3,0),
+                        SUB_DETAIL_HEAD_CODE NUMBER(3,0) DEFAULT 0,
+                        TO_AMOUNT NUMBER(14,2),
+                        DAA_TAG VARCHAR2(1 BYTE) DEFAULT 'Y',
+                        CONTINGENCY_TAG VARCHAR2(1 BYTE) DEFAULT 'N',
+                        DR_CR_DD_DC_TAG VARCHAR2(2 BYTE) DEFAULT 'CR',
+                        REMARKS VARCHAR2(40 BYTE),
+                        REASONS VARCHAR2(40 BYTE),
+                        CREATE_USER VARCHAR2(10 BYTE) DEFAULT 'DIR',
+                        CREATE_DATE DATE,
+                        MODIFY_USER VARCHAR2(10 BYTE) DEFAULT 'DIR',
+                        MODIFY_DATE DATE,
+                        SL_NO NUMBER(3,0) DEFAULT 28,
+                        CAT_SCHEME_CODE NUMBER(4,0) DEFAULT 8
+                    )
+                ");
+            } catch (Throwable $exDtls) {}
+
+            try {
+                $db->exec("
+                    CREATE TABLE VLCS_B2_TE_BATCH_LOG (
+                        ID NUMBER(10,0) PRIMARY KEY,
+                        BATCH_CODE VARCHAR2(30 BYTE),
+                        FILTER_TYPE VARCHAR2(30 BYTE),
+                        ACCOUNTING_MONTH VARCHAR2(30 BYTE),
+                        FIN_YEAR VARCHAR2(20 BYTE),
+                        RECORDS_POSTED NUMBER(8,0),
+                        TOTAL_AMOUNT NUMBER(16,2),
+                        STATUS VARCHAR2(20 BYTE),
+                        MESSAGE VARCHAR2(500 BYTE),
+                        RUN_USER VARCHAR2(50 BYTE),
+                        RUN_DATE DATE
+                    )
+                ");
+            } catch (Throwable $exLog) {}
+
+            try {
+                $db->exec("ALTER TABLE GENERATED_TRANSFER_REPORTS ADD (IS_POSTED NUMBER(1,0) DEFAULT 0)");
+            } catch (Throwable $exCol) {}
+
+            try {
+                $db->exec("ALTER TABLE GENERATED_TRANSFER_REPORTS ADD (VLC_TE_NUMBER VARCHAR2(30 BYTE))");
+            } catch (Throwable $exVlcTe) {}
+
             return;
         }
 
         @$db->exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_acct_sec_num ON generated_transfer_reports (accounting_month, sectional_number)");
+
+        // Ensure columns and tables for SQLite fallback
+        try {
+            $db->exec("ALTER TABLE generated_transfer_reports ADD COLUMN is_posted INTEGER DEFAULT 0");
+        } catch (Throwable $exColSq) {}
+
+        try {
+            $db->exec("ALTER TABLE generated_transfer_reports ADD COLUMN vlc_te_number TEXT");
+        } catch (Throwable $exVlcTeSq) {}
+
+        $db->exec("
+            CREATE TABLE IF NOT EXISTS b2_te_hdrs (
+                te_no INTEGER PRIMARY KEY,
+                grant_code INTEGER DEFAULT 2,
+                parameter_code INTEGER DEFAULT 27,
+                source_code INTEGER DEFAULT 55,
+                te_date TEXT,
+                sst_tag TEXT DEFAULT 'N',
+                belated_tag TEXT DEFAULT 'N',
+                dr_cr_dd_dc_tag TEXT,
+                daa_tag TEXT,
+                contingency_tag TEXT DEFAULT 'N',
+                fin_year_code INTEGER,
+                accounting_month INTEGER,
+                month_of_account TEXT,
+                create_user TEXT DEFAULT 'DIR',
+                create_date TEXT,
+                modify_user TEXT DEFAULT 'DIR',
+                modify_date TEXT,
+                te_approve_tag TEXT DEFAULT 'Y',
+                te_descr TEXT,
+                sl_no INTEGER DEFAULT 28,
+                source_ministry_tag TEXT DEFAULT 'S',
+                te_sanction_no TEXT,
+                tag TEXT DEFAULT 'A',
+                major_head_code INTEGER,
+                sub_major_head_code INTEGER,
+                minor_head_code INTEGER,
+                sub_head_code INTEGER,
+                sub_sub_head_code INTEGER,
+                detail_head_code INTEGER,
+                sub_detail_head_code INTEGER,
+                initial_amount REAL,
+                cat_scheme_code INTEGER DEFAULT 8
+            )
+        ");
+
+        $db->exec("
+            CREATE TABLE IF NOT EXISTS b2_te_hdr (
+                te_no INTEGER,
+                major_head_code INTEGER DEFAULT 8675,
+                sub_major_head_code INTEGER DEFAULT 0,
+                minor_head_code INTEGER DEFAULT 106,
+                sub_head_code INTEGER DEFAULT 3,
+                sub_sub_head_code INTEGER DEFAULT 0,
+                detail_head_code INTEGER DEFAULT 0,
+                sub_detail_head_code INTEGER DEFAULT 0,
+                initial_amount REAL,
+                create_user TEXT DEFAULT 'DIR',
+                create_date TEXT,
+                modify_user TEXT DEFAULT 'DIR',
+                modify_date TEXT,
+                dr_cr_dd_dc_tag TEXT DEFAULT 'DR',
+                daa_tag TEXT DEFAULT 'N',
+                cat_scheme_code INTEGER DEFAULT 8,
+                grant_code INTEGER DEFAULT 43,
+                parameter_code INTEGER DEFAULT 27
+            )
+        ");
+
+        $db->exec("
+            CREATE TABLE IF NOT EXISTS b2_te_dtls (
+                te_no INTEGER,
+                srl_no INTEGER,
+                grant_code INTEGER DEFAULT 43,
+                parameter_code INTEGER DEFAULT 27,
+                major_head_code INTEGER DEFAULT 1601,
+                sub_major_head_code INTEGER DEFAULT 6,
+                minor_head_code INTEGER DEFAULT 101,
+                sub_head_code INTEGER,
+                sub_sub_head_code INTEGER DEFAULT 0,
+                detail_head_code INTEGER,
+                sub_detail_head_code INTEGER DEFAULT 0,
+                to_amount REAL,
+                daa_tag TEXT DEFAULT 'Y',
+                contingency_tag TEXT DEFAULT 'N',
+                dr_cr_dd_dc_tag TEXT DEFAULT 'CR',
+                remarks TEXT,
+                reasons TEXT,
+                create_user TEXT DEFAULT 'DIR',
+                create_date TEXT,
+                modify_user TEXT DEFAULT 'DIR',
+                modify_date TEXT,
+                sl_no INTEGER DEFAULT 28,
+                cat_scheme_code INTEGER DEFAULT 8
+            )
+        ");
+
+        $db->exec("
+            CREATE TABLE IF NOT EXISTS vlcs_b2_te_batch_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                batch_code TEXT,
+                filter_type TEXT,
+                accounting_month TEXT,
+                fin_year TEXT,
+                records_posted INTEGER,
+                total_amount REAL,
+                status TEXT,
+                message TEXT,
+                run_user TEXT,
+                run_date TEXT
+            )
+        ");
     } catch (Throwable $ex) {
-        // Ignore if index already exists
+        // Ignore if schema checks completed
     }
 }
 

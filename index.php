@@ -67,6 +67,11 @@ $current_month = date('m/Y');
           <span>TE Detailed Report</span>
         </button>
 
+        <button class="tab-btn" data-tab="tab-batch-posting" data-title="Batch TE Posting to VLCS Schema" data-subtitle="Post TE Detailed Report records into VLCS database schema (vlcs.B2_TE_HDRS, vlcs.B2_TE_HDR, vlcs.B2_TE_DTLS)" title="Batch TE Posting">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+          <span>Batch TE Posting</span>
+        </button>
+
         <button class="tab-btn" data-tab="tab-master" data-title="Scheme Config Master Data" data-subtitle="Manage CSS scheme mappings and share breakdown percentages" title="Scheme Config Master">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
           <span>Scheme Config Master</span>
@@ -311,6 +316,7 @@ $current_month = date('m/Y');
                 <thead>
                   <tr>
                     <th>Sectional No.</th>
+                    <th align="center">VLC TE Number</th>
                     <th>Posting Date</th>
                     <th>TR Code</th>
                     <th align="right">Amount</th>
@@ -320,7 +326,7 @@ $current_month = date('m/Y');
                   </tr>
                 </thead>
                 <tbody id="pdf-list-body">
-                  <tr><td colspan="7" align="center">Click 'Filter Reports' to view generated PDFs.</td></tr>
+                  <tr><td colspan="8" align="center">Click 'Filter Reports' to view generated PDFs.</td></tr>
                 </tbody>
               </table>
             </div>
@@ -436,11 +442,11 @@ $current_month = date('m/Y');
                     <th>Major (Dr)</th><th>Sub Major (Dr)</th><th>Minor (Dr)</th><th>Sub (Dr)</th><th>Detail (Dr)</th><th>Sub Detail (Dr)</th>
                     <th align="right">Total Amount (Rs.)</th>
                     <th>Major (Cr)</th><th>Sub Major (Cr)</th><th>Minor (Cr)</th><th>Sub (Cr)</th><th>Detail (Cr)</th><th>Sub Detail (Cr)</th>
-                    <th>Sectional No.</th><th>TR No.</th><th>TR Description</th><th>Ministry</th><th>Date</th>
+                    <th>Sectional No.</th><th align="center">VLC TE Number</th><th>TR No.</th><th>TR Description</th><th>Ministry</th><th>Date</th>
                   </tr>
                 </thead>
                 <tbody id="detailed-body">
-                  <tr><td colspan="18" align="center">Select filter and click 'Load Report'.</td></tr>
+                  <tr><td colspan="19" align="center">Select filter and click 'Load Report'.</td></tr>
                 </tbody>
               </table>
             </div>
@@ -505,6 +511,171 @@ $current_month = date('m/Y');
                 </thead>
                 <tbody id="users-table-body">
                   <tr><td colspan="7" align="center">Loading users...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 9: Batch Posting of TE Data -->
+        <div id="tab-batch-posting" class="tab-content">
+          <div class="card">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px;">
+              <div>
+                <h2 class="card-title">Batch Posting of TE Detailed Report Data</h2>
+                <p class="card-subtitle">Post transfer entry vouchers into Oracle database <strong>vlcs</strong> under schema <strong>vlcs</strong> (tables: <code>vlcs.B2_TE_HDRS</code>, <code>vlcs.B2_TE_HDR</code>, <code>vlcs.B2_TE_DTLS</code>).</p>
+              </div>
+              <div class="date-pill" style="background: rgba(99, 102, 241, 0.1); color: #6366f1; border-color: rgba(99, 102, 241, 0.2);">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                <span>Batch Code: B2_DDR_DEPARTMENT_TR_BATCH</span>
+              </div>
+            </div>
+
+            <form id="batch-filter-form" onsubmit="event.preventDefault(); handleBatchPreview();">
+              <div class="form-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin-top: 16px;">
+                <div class="form-group">
+                  <label for="batch-filter-type">Filter Type</label>
+                  <select id="batch-filter-type" class="form-control" onchange="toggleBatchFilterInputs()">
+                    <option value="month" selected>By Accounting Month</option>
+                    <option value="date">By Date Range</option>
+                    <option value="fy">By Financial Year</option>
+                  </select>
+                </div>
+
+                <div class="form-group" id="batch-group-month">
+                  <label for="batch-acct-month">Accounting Month</label>
+                  <input type="text" id="batch-acct-month" class="form-control" value="<?= $current_month ?>" placeholder="MM/YYYY (e.g. 04/2026)">
+                </div>
+
+                <div class="form-group" id="batch-group-from" style="display: none;">
+                  <label for="batch-from-date">From Date</label>
+                  <input type="text" id="batch-from-date" class="form-control" placeholder="DD/MM/YYYY">
+                </div>
+
+                <div class="form-group" id="batch-group-to" style="display: none;">
+                  <label for="batch-to-date">To Date</label>
+                  <input type="text" id="batch-to-date" class="form-control" placeholder="DD/MM/YYYY">
+                </div>
+
+                <div class="form-group" id="batch-group-fy" style="display: none;">
+                  <label for="batch-fy-val">Financial Year</label>
+                  <select id="batch-fy-val" class="form-control">
+                    <option value="2025-26">2025-26</option>
+                    <option value="2026-27" selected>2026-27</option>
+                    <option value="2027-28">2027-28</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style="display: flex; gap: 12px; margin-top: 16px; flex-wrap: wrap;">
+                <button type="button" onclick="handleBatchPreview()" class="btn btn-secondary" style="display: inline-flex; align-items: center; gap: 6px;">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                  <span>Preview TE Data to Post</span>
+                </button>
+
+                <button type="button" onclick="executeBatchPostingAction()" class="btn btn-primary" style="background-color: #059669; border-color: #059669; display: inline-flex; align-items: center; gap: 6px;">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                  <span>Run Batch Posting (Post to VLCS)</span>
+                </button>
+              </div>
+            </form>
+
+            <div id="batch-status-banner" style="display: none; margin-top: 16px; padding: 12px 16px; border-radius: 8px; font-weight: 600;"></div>
+          </div>
+
+          <!-- KPI Metric Cards for Batch Posting -->
+          <div class="kpi-grid" style="margin-top: 20px;">
+            <div class="kpi-card">
+              <div class="kpi-icon kpi-icon-blue">
+                <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+              </div>
+              <div class="kpi-details">
+                <span id="kpi-batch-vouchers" class="kpi-value">0</span>
+                <span class="kpi-label">TE Vouchers Ready</span>
+              </div>
+            </div>
+
+            <div class="kpi-card">
+              <div class="kpi-icon kpi-icon-green">
+                <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+              </div>
+              <div class="kpi-details">
+                <span id="kpi-batch-total-amt" class="kpi-value">₹0.00</span>
+                <span class="kpi-label">Total Amount to Post</span>
+              </div>
+            </div>
+
+            <div class="kpi-card">
+              <div class="kpi-icon kpi-icon-purple">
+                <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"/></svg>
+              </div>
+              <div class="kpi-details">
+                <span class="kpi-value" style="font-size: 1.1rem; color: #8b5cf6;">DB: vlcs | Schema: vlcs</span>
+                <span class="kpi-label">Target Oracle Database</span>
+              </div>
+            </div>
+
+            <div class="kpi-card">
+              <div class="kpi-icon kpi-icon-warning">
+                <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+              </div>
+              <div class="kpi-details">
+                <span id="kpi-batch-last-run" class="kpi-value" style="font-size: 1rem;">Not Run Yet</span>
+                <span class="kpi-label">Last Batch Run</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Unposted TE Preview Table Card -->
+          <div class="card" style="margin-top: 20px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 12px;">
+              <div>
+                <h3 class="card-title">TE Vouchers Preview (Target Tables: vlcs.B2_TE_HDRS, vlcs.B2_TE_HDR, vlcs.B2_TE_DTLS)</h3>
+                <span id="batch-preview-desc" class="card-subtitle">Select filters and click "Preview TE Data to Post" to view unposted vouchers.</span>
+              </div>
+            </div>
+
+            <div class="table-responsive">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>Sectional No. (Sanction No)</th>
+                    <th>TR No & Description</th>
+                    <th align="center">Posting Date</th>
+                    <th align="center">Debit Head (8675-00-106-03)</th>
+                    <th align="center">Credit Head (1601)</th>
+                    <th align="right">Total Amount (₹)</th>
+                  </tr>
+                </thead>
+                <tbody id="batch-preview-body">
+                  <tr><td colspan="6" align="center">No preview data loaded yet. Click "Preview TE Data to Post".</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Historical Batch Posting Execution Logs -->
+          <div class="card" style="margin-top: 20px;">
+            <h3 class="card-title">Batch Execution Logs & Audit Trail (VLCS_B2_TE_BATCH_LOG)</h3>
+            <p class="card-subtitle">History of previous batch postings executed for Transfer Entry Detailed Reports.</p>
+
+            <div class="table-responsive" style="margin-top: 14px;">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>Log ID</th>
+                    <th>Batch Code</th>
+                    <th>Filter / Month</th>
+                    <th align="right">Vouchers Posted</th>
+                    <th align="right">Total Amount (₹)</th>
+                    <th align="center">Status</th>
+                    <th>Run User</th>
+                    <th align="center">Run Date</th>
+                    <th>Log Message</th>
+                  </tr>
+                </thead>
+                <tbody id="batch-logs-body">
+                  <tr><td colspan="9" align="center">Loading batch history...</td></tr>
                 </tbody>
               </table>
             </div>

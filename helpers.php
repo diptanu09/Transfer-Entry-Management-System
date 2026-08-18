@@ -5,10 +5,59 @@
 
 function parse_accounting_month($value) {
     $value = trim($value);
-    if (!preg_match('/^(0[1-9]|1[0-2])\/(20\d{2})$/', $value, $matches)) {
-        throw new Exception("Accounting month must use MM/YYYY, for example 07/2026.");
+    if (preg_match('/^(\d{1,2})\/(20\d{2})$/', $value, $matches)) {
+        $m = (int)$matches[1];
+        $y = (int)$matches[2];
+        if ($m >= 1 && $m <= 12) {
+            return [$m, $y];
+        }
     }
-    return [(int)$matches[1], (int)$matches[2]];
+    if (preg_match('/^(20\d{2})-(\d{1,2})$/', $value, $matches)) {
+        $y = (int)$matches[1];
+        $m = (int)$matches[2];
+        if ($m >= 1 && $m <= 12) {
+            return [$m, $y];
+        }
+    }
+    throw new Exception("Accounting month must use MM/YYYY format, e.g. 04/2026.");
+}
+
+/**
+ * Calculates financial accounting month code:
+ * 1 for April, 2 for May, 3 for June ... 9 for December, 10 for January, 11 for February, 12 for March.
+ *
+ * @param string|int $value Date string, MM/YYYY string, or calendar month
+ * @return int 1-12
+ */
+function acct_month_code($value) {
+    if (empty($value)) {
+        $m = (int)date('m');
+    } elseif (is_numeric($value)) {
+        $val_int = (int)$value;
+        if ($val_int === 13) return 13;
+        if ($val_int >= 1 && $val_int <= 12) {
+            $m = $val_int;
+        } else {
+            $m = (int)date('m');
+        }
+    } else {
+        $text = trim((string)$value);
+        if (preg_match('/^13\/(20\d{2})$/', $text) || preg_match('/^(20\d{2})-13$/', $text) || preg_match('/\b(sy|supplementary)\b/i', $text)) {
+            return 13;
+        }
+        if (preg_match('/^(\d{1,2})\/(20\d{2})$/', $text, $match)) {
+            $m = (int)$match[1];
+        } elseif (preg_match('/^(20\d{2})-(\d{1,2})/', $text, $match)) {
+            $m = (int)$match[2];
+        } elseif (preg_match('/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](20\d{2})/', $text, $match)) {
+            $m = (int)$match[2];
+        } else {
+            $m = (int)date('m');
+        }
+    }
+
+    if ($m === 13) return 13;
+    return ($m >= 4) ? ($m - 3) : ($m + 9);
 }
 
 function financial_year($value) {
@@ -31,6 +80,22 @@ function financial_year($value) {
     $start_year = ($month >= 4) ? $year : ($year - 1);
     $next_year_suffix = substr((string)($start_year + 1), -2);
     return "{$start_year}-{$next_year_suffix}";
+}
+
+function fin_year_code($value) {
+    if (!empty($value)) {
+        $text = trim((string)$value);
+        if (preg_match('/^(20\d{2})/', $text, $m)) {
+            return (int)$m[1] - 1998;
+        }
+        if (preg_match('/^(\d{1,2})\/(20\d{2})$/', $text, $m)) {
+            $month = (int)$m[1];
+            $year = (int)$m[2];
+            $start_year = ($month >= 4) ? $year : ($year - 1);
+            return $start_year - 1998;
+        }
+    }
+    return 28; // Default for 2026-27 (2026 - 1998 = 28)
 }
 
 function format_date($value) {

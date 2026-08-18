@@ -16,6 +16,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initSummaryPage();
   initDetailedPage();
   initMasterPage();
+  initBatchPostingPage();
   loadDashboardKpis();
 });
 
@@ -413,6 +414,7 @@ function initTabs() {
       if (targetId === 'tab-view-pdf') loadPdfList();
       if (targetId === 'tab-master') loadMasterRecords();
       if (targetId === 'tab-users') loadUsersList();
+      if (targetId === 'tab-batch-posting') loadBatchPostingPage();
 
       loadDashboardKpis();
     });
@@ -506,6 +508,13 @@ function formatMoney(num) {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2
   }).format(num || 0);
+}
+
+function numberWithCommas(x) {
+  if (x === null || x === undefined || x === '') return '0.00';
+  const num = typeof x === 'number' ? x : parseFloat(x);
+  if (isNaN(num)) return '0.00';
+  return formatMoney(num);
 }
 
 // Upload Page Logic
@@ -748,6 +757,7 @@ async function loadPdfList() {
       body.innerHTML = (data.reports || []).map(r => `
         <tr>
           <td>BK/TE/${escapeHtml(r.accounting_month)}/${r.sectional_number}</td>
+          <td align="center">${r.vlc_te_number ? `<span style="background: rgba(16, 185, 129, 0.15); color: #059669; padding: 2px 8px; border-radius: 4px; font-weight: 600; font-size: 0.85rem;">TE-${escapeHtml(r.vlc_te_number)}</span>` : '<span style="color: #9ca3af; font-size: 0.85rem;">-</span>'}</td>
           <td>${escapeHtml(r.posting_date)} ${escapeHtml(r.posting_time)}</td>
           <td><strong>${escapeHtml(r.sg_account_name)}</strong></td>
           <td align="right">Rs. ${formatMoney(r.amount)}</td>
@@ -755,7 +765,7 @@ async function loadPdfList() {
           <td>${escapeHtml(r.generation_date)}</td>
           <td><a href="api.php?action=download_pdf&id=${r.id}&file=${encodeURIComponent(r.pdf_file_name || 'report.pdf')}" target="_blank" class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.8rem;">Open PDF</a></td>
         </tr>
-      `).join('') || `<tr><td colspan="7" align="center">No generated PDFs found.</td></tr>`;
+      `).join('') || `<tr><td colspan="8" align="center">No generated PDFs found.</td></tr>`;
     }
   } catch (e) { }
 }
@@ -883,7 +893,7 @@ async function loadDetailedReport() {
 
   if (!body) return;
 
-  body.innerHTML = `<tr><td colspan="18" align="center">Loading detailed report...</td></tr>`;
+  body.innerHTML = `<tr><td colspan="19" align="center">Loading detailed report...</td></tr>`;
 
   try {
     const url = `api.php?action=get_detailed_report&filter_type=${mode}&from_date=${encodeURIComponent(from)}&to_date=${encodeURIComponent(to)}&accounting_month=${encodeURIComponent(month)}&financial_year_val=${encodeURIComponent(fy)}`;
@@ -901,6 +911,7 @@ async function loadDetailedReport() {
     let totAmt = 0;
     let rowsHtml = records.map(r => {
       totAmt += parseFloat(r.total_amount || 0);
+      const vlcTe = r.vlcs_te_number || r.vlc_te_number;
       return `
         <tr>
           <td align="center">${escapeHtml(r.major_head_dr)}</td>
@@ -917,6 +928,7 @@ async function loadDetailedReport() {
           <td align="center">${escapeHtml(r.detail_head_cr)}</td>
           <td align="center">${escapeHtml(r.sub_detail_cr)}</td>
           <td align="center">${escapeHtml(r.sectional_no)}</td>
+          <td align="center">${vlcTe ? `<span style="background: rgba(16, 185, 129, 0.15); color: #059669; padding: 2px 8px; border-radius: 4px; font-weight: 600; font-size: 0.85rem;">TE-${escapeHtml(vlcTe)}</span>` : '<span style="color: #9ca3af; font-size: 0.85rem;">-</span>'}</td>
           <td align="center"><strong>${escapeHtml(r.tr_no)}</strong></td>
           <td>${escapeHtml(r.tr_desc)}</td>
           <td>${escapeHtml(r.ministry_name)}</td>
@@ -932,12 +944,12 @@ async function loadDetailedReport() {
           <td align="right">Rs. ${formatMoney(totAmt)}</td>
           <td colspan="6"></td>
           <td><strong>${records.length} records</strong></td>
-          <td colspan="4"></td>
+          <td colspan="5"></td>
         </tr>
       `;
     }
 
-    body.innerHTML = rowsHtml || `<tr><td colspan="18" align="center">No data found for filter.</td></tr>`;
+    body.innerHTML = rowsHtml || `<tr><td colspan="19" align="center">No data found for filter.</td></tr>`;
   } catch (err) {
     showAlertModal("Error", err.message, true);
   }
@@ -1114,9 +1126,239 @@ async function saveMasterRecord() {
   }
 }
 
+// ===================================================================
+// BATCH POSTING MODULE (VLCS SCHEMA vlcs.B2_TE_HDRS, B2_TE_HDR, B2_TE_DTLS)
+// ===================================================================
+
+function initBatchPostingPage() {
+  if (typeof flatpickr !== 'undefined') {
+    flatpickr('#batch-from-date, #batch-to-date', {
+      dateFormat: 'd/m/Y',
+      allowInput: true
+    });
+  }
+}
+
+function loadBatchPostingPage() {
+  toggleBatchFilterInputs();
+  handleBatchPreview();
+  loadBatchLogs();
+}
+
+function toggleBatchFilterInputs() {
+  const filterType = document.getElementById('batch-filter-type')?.value || 'month';
+  const grpMonth = document.getElementById('batch-group-month');
+  const grpFrom = document.getElementById('batch-group-from');
+  const grpTo = document.getElementById('batch-group-to');
+  const grpFy = document.getElementById('batch-group-fy');
+
+  if (grpMonth) grpMonth.style.display = (filterType === 'month') ? 'block' : 'none';
+  if (grpFrom) grpFrom.style.display = (filterType === 'date') ? 'block' : 'none';
+  if (grpTo) grpTo.style.display = (filterType === 'date') ? 'block' : 'none';
+  if (grpFy) grpFy.style.display = (filterType === 'fy') ? 'block' : 'none';
+}
+
+async function handleBatchPreview() {
+  const filterType = document.getElementById('batch-filter-type')?.value || 'month';
+  const acctMonth = document.getElementById('batch-acct-month')?.value.trim() || '';
+  const fromDate = document.getElementById('batch-from-date')?.value.trim() || '';
+  const toDate = document.getElementById('batch-to-date')?.value.trim() || '';
+  const fyVal = document.getElementById('batch-fy-val')?.value || '';
+
+  const tableBody = document.getElementById('batch-preview-body');
+  const descEl = document.getElementById('batch-preview-desc');
+  const kpiVouchers = document.getElementById('kpi-batch-vouchers');
+  const kpiAmt = document.getElementById('kpi-batch-total-amt');
+
+  if (tableBody) {
+    tableBody.innerHTML = `<tr><td colspan="6" align="center">Loading TE Vouchers preview...</td></tr>`;
+  }
+
+  const params = new URLSearchParams({
+    action: 'preview_te_batch',
+    filter_type: filterType,
+    accounting_month: acctMonth,
+    from_date: fromDate,
+    to_date: toDate,
+    financial_year_val: fyVal
+  });
+
+  try {
+    const res = await fetch(`api.php?${params.toString()}`);
+    const data = await res.json();
+
+    if (!data.success) {
+      if (tableBody) tableBody.innerHTML = `<tr><td colspan="6" align="center" style="color: var(--danger); font-weight:600;">${escapeHtml(data.error || 'Failed to fetch preview data.')}</td></tr>`;
+      return;
+    }
+
+    const preview = data.preview || {};
+    const vouchers = preview.vouchers || [];
+    const totalAmt = preview.total_amount || 0.0;
+    const vCount = preview.vouchers_count || 0;
+
+    if (kpiVouchers) kpiVouchers.innerText = vCount;
+    if (kpiAmt) kpiAmt.innerText = `₹${numberWithCommas(totalAmt.toFixed(2))}`;
+    if (descEl) descEl.innerText = preview.filter_desc || 'Preview loaded.';
+
+    if (vouchers.length === 0) {
+      const msg = preview.notice || 'No TE report records found matching filter criteria.';
+      if (tableBody) tableBody.innerHTML = `<tr><td colspan="6" align="center" style="padding: 24px; font-weight: 500; color: var(--text-muted);">${escapeHtml(msg)}</td></tr>`;
+      return;
+    }
+
+    if (tableBody) {
+      tableBody.innerHTML = vouchers.map(v => {
+        const crList = (v.credit_heads || []).map(ch => 
+          `<div style="font-size:0.8rem; line-height:1.4;"><code>${ch.major_head}-${ch.sub_major}-${ch.minor_head}-${ch.sub_head}-${ch.detail_head}-${ch.sub_detail}</code> (₹${numberWithCommas(ch.amount.toFixed(2))})</div>`
+        ).join('');
+
+        return `
+          <tr>
+            <td><strong>${escapeHtml(v.sectional_no)}</strong></td>
+            <td>
+              <div style="font-weight:600; color:var(--primary);">${escapeHtml(v.tr_no)}</div>
+              <div style="font-size:0.8rem; color:var(--text-muted);">${escapeHtml(v.tr_desc || '-')}</div>
+            </td>
+            <td align="center">${escapeHtml(v.posting_date)}</td>
+            <td align="center"><code>${escapeHtml(v.debit_head)}</code></td>
+            <td align="center">${crList}</td>
+            <td align="right" style="font-weight:700; color:var(--success);">₹${numberWithCommas(v.total_amount.toFixed(2))}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+  } catch (err) {
+    if (tableBody) tableBody.innerHTML = `<tr><td colspan="6" align="center" style="color: var(--danger);">${escapeHtml(err.message || 'Error communicating with server.')}</td></tr>`;
+  }
+}
+
+async function executeBatchPostingAction() {
+  if (currentUserRole !== 'ADMIN') {
+    showAlertModal("Access Denied", "Your role does not have permission to run Batch Posting. Only Admin users can run Batch Posting.", true);
+    return;
+  }
+
+  const filterType = document.getElementById('batch-filter-type')?.value || 'month';
+  const acctMonth = document.getElementById('batch-acct-month')?.value.trim() || '';
+  const fromDate = document.getElementById('batch-from-date')?.value.trim() || '';
+  const toDate = document.getElementById('batch-to-date')?.value.trim() || '';
+  const fyVal = document.getElementById('batch-fy-val')?.value || '';
+
+  const confirmMsg = `Are you sure you want to run Batch Posting (B2_DDR_DEPARTMENT_TR_BATCH)?\n\nThis will post all matching TE Detailed report vouchers directly into Oracle database 'vlcs' under schema 'vlcs' (tables vlcs.B2_TE_HDRS, vlcs.B2_TE_HDR, vlcs.B2_TE_DTLS).`;
+  if (!confirm(confirmMsg)) return;
+
+  const banner = document.getElementById('batch-status-banner');
+  if (banner) {
+    banner.style.display = 'block';
+    banner.style.background = 'rgba(59, 130, 246, 0.15)';
+    banner.style.color = '#2563eb';
+    banner.innerHTML = `<div style="display:flex; align-items:center; gap:8px;"><span class="spinner"></span> Executing batch posting to schema VLCS... Please wait.</div>`;
+  }
+
+  const formData = new FormData();
+  formData.append('filter_type', filterType);
+  formData.append('accounting_month', acctMonth);
+  formData.append('from_date', fromDate);
+  formData.append('to_date', toDate);
+  formData.append('financial_year_val', fyVal);
+
+  try {
+    const res = await fetch('api.php?action=run_te_batch_posting', { method: 'POST', body: formData });
+    const data = await res.json();
+
+    if (!data.success) {
+      if (banner) {
+        banner.style.background = 'rgba(239, 68, 68, 0.15)';
+        banner.style.color = '#dc2626';
+        banner.innerText = `Batch Posting Failed: ${data.error || 'Unknown error'}`;
+      }
+      showAlertModal("Batch Posting Error", data.error || "Batch execution failed.", true);
+      return;
+    }
+
+    if (banner) {
+      banner.style.background = 'rgba(16, 185, 129, 0.15)';
+      banner.style.color = '#059669';
+      banner.innerText = data.message || `Successfully posted ${data.posted_vouchers} TE vouchers to VLCS schema!`;
+    }
+
+    showAlertModal("Batch Posting Successful", data.message || "TE Report records posted successfully into schema VLCS!");
+    handleBatchPreview();
+    loadBatchLogs();
+  } catch (err) {
+    if (banner) {
+      banner.style.background = 'rgba(239, 68, 68, 0.15)';
+      banner.style.color = '#dc2626';
+      banner.innerText = `Error: ${err.message || 'Server error'}`;
+    }
+    showAlertModal("Error", err.message || "Failed to execute batch posting.", true);
+  }
+}
+
+async function loadBatchLogs() {
+  const tableBody = document.getElementById('batch-logs-body');
+  const lastRunEl = document.getElementById('kpi-batch-last-run');
+
+  if (tableBody) tableBody.innerHTML = `<tr><td colspan="9" align="center">Loading batch history...</td></tr>`;
+
+  try {
+    const res = await fetch('api.php?action=get_batch_posting_history');
+    const data = await res.json();
+
+    if (!data.success) {
+      if (tableBody) tableBody.innerHTML = `<tr><td colspan="9" align="center">${escapeHtml(data.error)}</td></tr>`;
+      return;
+    }
+
+    const history = data.history || [];
+    if (history.length === 0) {
+      if (tableBody) tableBody.innerHTML = `<tr><td colspan="9" align="center">No batch execution logs found.</td></tr>`;
+      if (lastRunEl) lastRunEl.innerText = 'Not Run Yet';
+      return;
+    }
+
+    const latest = history[0];
+    if (lastRunEl) {
+      lastRunEl.innerText = `${latest.run_date || '-'} (${latest.run_user || 'DIR'})`;
+    }
+
+    if (tableBody) {
+      tableBody.innerHTML = history.map(h => {
+        const isSuccess = (h.status === 'SUCCESS');
+        const badge = isSuccess
+          ? `<span style="color:var(--success); font-weight:700;">SUCCESS</span>`
+          : `<span style="color:var(--danger); font-weight:700;">${escapeHtml(h.status)}</span>`;
+
+        return `
+          <tr>
+            <td><strong>#${h.id}</strong></td>
+            <td><code>${escapeHtml(h.batch_code || 'B2_DDR_DEPARTMENT_TR_BATCH')}</code></td>
+            <td>${escapeHtml(h.accounting_month || h.filter_type || '-')}</td>
+            <td align="right" style="font-weight:600;">${h.records_posted}</td>
+            <td align="right" style="font-weight:700; color:var(--primary);">₹${numberWithCommas(parseFloat(h.total_amount || 0).toFixed(2))}</td>
+            <td align="center">${badge}</td>
+            <td>${escapeHtml(h.run_user || 'DIR')}</td>
+            <td align="center">${escapeHtml(h.run_date || '-')}</td>
+            <td style="font-size:0.85rem; color:var(--text-muted);">${escapeHtml(h.message || '-')}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+  } catch (err) {
+    if (tableBody) tableBody.innerHTML = `<tr><td colspan="9" align="center">${escapeHtml(err.message)}</td></tr>`;
+  }
+}
+
 // Global Exports
 window.editMasterRecord = editMasterRecord;
 window.deleteMasterRecord = deleteMasterRecord;
 window.openMasterModal = openMasterModal;
 window.closeMasterModal = closeMasterModal;
 window.saveMasterRecord = saveMasterRecord;
+window.initBatchPostingPage = initBatchPostingPage;
+window.loadBatchPostingPage = loadBatchPostingPage;
+window.toggleBatchFilterInputs = toggleBatchFilterInputs;
+window.handleBatchPreview = handleBatchPreview;
+window.executeBatchPostingAction = executeBatchPostingAction;
+window.loadBatchLogs = loadBatchLogs;

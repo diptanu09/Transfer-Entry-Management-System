@@ -644,7 +644,7 @@ function get_generated_reports(?string $start_date = null, ?string $end_date = n
     $where_sql = !empty($where) ? "WHERE " . implode(" AND ", $where) : "";
     $stmt = $pdo->prepare("
         SELECT g.id, g.sectional_number, g.accounting_month, g.generation_date,
-               g.pdf_file_name, d.posting_date, d.posting_time,
+               g.pdf_file_name, g.is_posted, g.vlc_te_number, d.posting_date, d.posting_time,
                d.sg_account_name, d.amount
         FROM generated_transfer_reports g
         JOIN daily_payment_records d ON d.id = g.daily_payment_record_id

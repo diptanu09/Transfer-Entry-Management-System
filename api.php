@@ -15,6 +15,7 @@ require_once __DIR__ . '/services/master_service.php';
 require_once __DIR__ . '/services/transfer_service.php';
 require_once __DIR__ . '/services/summary_service.php';
 require_once __DIR__ . '/services/detailed_service.php';
+require_once __DIR__ . '/services/batch_posting_service.php';
 
 ob_start();
 
@@ -370,6 +371,34 @@ try {
         case 'get_master_records':
             $q = $_GET['search'] ?? null;
             send_json(['success' => true, 'records' => get_master_records($q)]);
+            break;
+
+        case 'preview_te_batch':
+            $type = $_REQUEST['filter_type'] ?? 'month';
+            $from = $_REQUEST['from_date'] ?? null;
+            $to = $_REQUEST['to_date'] ?? null;
+            $month = $_REQUEST['accounting_month'] ?? null;
+            $fy = $_REQUEST['financial_year_val'] ?? null;
+
+            $res = preview_te_batch_posting($type, $from, $to, $month, $fy);
+            send_json(['success' => true, 'preview' => $res]);
+            break;
+
+        case 'run_te_batch_posting':
+            require_role(['ADMIN']);
+            $type = $_REQUEST['filter_type'] ?? 'month';
+            $from = $_REQUEST['from_date'] ?? null;
+            $to = $_REQUEST['to_date'] ?? null;
+            $month = $_REQUEST['accounting_month'] ?? null;
+            $fy = $_REQUEST['financial_year_val'] ?? null;
+            $user = $_SESSION['user'] ?? 'DIR';
+
+            $res = post_te_detailed_report_batch($type, $from, $to, $month, $fy, $user);
+            send_json($res);
+            break;
+
+        case 'get_batch_posting_history':
+            send_json(['success' => true, 'history' => get_batch_posting_history()]);
             break;
 
         case 'clear_all_data':
